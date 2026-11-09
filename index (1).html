@@ -1,0 +1,1404 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VCE Mobile Exam Player</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f0f6ff',
+                            100: '#e0edff',
+                            500: '#3b82f6',
+                            600: '#2563eb',
+                            700: '#1d4ed8',
+                            900: '#1e3a8a',
+                            accent: '#06b6d4',
+                            neon: '#10b981'
+                        },
+                        darkbg: '#0f172a',
+                        cardbg: '#1e293b',
+                        borderbg: '#334155'
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0f172a;
+            color: #f8fafc;
+            -webkit-tap-highlight-color: transparent;
+        }
+        /* Custom scrollbars */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0f172a;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 9999px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #475569;
+        }
+        /* Custom animations */
+        .fade-in {
+            animation: fadeIn 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .pulse-subtle {
+            animation: pulseSubtle 2s infinite;
+        }
+        @keyframes pulseSubtle {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col bg-slate-900 text-slate-100 antialiased selection:bg-brand-500 selection:text-white">
+
+    <!-- TOP STICKY NAVBAR -->
+    <header class="sticky top-0 z-30 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 px-4 py-3">
+        <div class="max-w-5xl mx-auto flex items-center justify-between">
+            <!-- App Brand / Title -->
+            <div class="flex items-center space-x-3 cursor-pointer" onclick="app.showScreen('welcome-screen')">
+                <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-brand-600 to-brand-accent flex items-center justify-center shadow-lg shadow-brand-500/20">
+                    <i class="fa-solid fa-graduation-cap text-white text-lg"></i>
+                </div>
+                <div>
+                    <h1 class="font-bold text-base md:text-lg tracking-tight leading-none bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">VCE Exam Engine</h1>
+                    <span id="nav-subtitle" class="text-xs text-slate-400 font-medium block mt-0.5">Mobile Exam Player</span>
+                </div>
+            </div>
+
+            <!-- Exam Mode Controls (Hidden when on home screen) -->
+            <div id="nav-exam-controls" class="hidden flex items-center space-x-2 md:space-x-4">
+                <!-- Timer Display -->
+                <div id="nav-timer" class="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-brand-accent font-mono text-sm font-semibold">
+                    <i class="fa-regular fa-clock"></i>
+                    <span id="timer-text">--:--</span>
+                </div>
+
+                <!-- Flag Count -->
+                <button onclick="app.toggleQuestionPalette()" class="relative flex items-center space-x-1 px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 hover:border-slate-600 text-xs font-semibold text-slate-300 transition-all">
+                    <i class="fa-solid fa-th-large text-brand-500"></i>
+                    <span class="hidden sm:inline">Grid</span>
+                    <span id="badge-flagged-count" class="hidden ml-1 px-1.5 py-0.5 bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-full text-[10px]">0</span>
+                </button>
+
+                <!-- Fullscreen Toggle -->
+                <button onclick="app.toggleFullscreen()" title="Toggle Fullscreen" class="p-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-400 hover:text-white transition">
+                    <i class="fa-solid fa-expand"></i>
+                </button>
+
+                <!-- Quit Exam -->
+                <button onclick="app.confirmQuitExam()" title="Exit Exam" class="p-2 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 hover:bg-red-500/20 transition">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- MAIN CONTAINER -->
+    <main class="flex-1 max-w-5xl w-full mx-auto p-4 md:p-6 flex flex-col justify-center">
+
+        <!-- 1. WELCOME & EXAM SELECTION SCREEN -->
+        <section id="welcome-screen" class="fade-in space-y-6">
+            <!-- Hero Header -->
+            <div class="text-center space-y-2 py-4">
+                <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-brand-500/10 text-brand-accent border border-brand-500/20">
+                    <i class="fa-solid fa-bolt text-brand-accent"></i> VCE Compatible Exam Simulator
+                </span>
+                <h2 class="text-3xl md:text-4xl font-extrabold tracking-tight text-white">Master Your Certification Exams</h2>
+                <p class="text-slate-400 text-sm md:text-base max-w-xl mx-auto">Practice in realistic exam conditions or study with instant feedback and explanations.</p>
+            </div>
+
+            <!-- Dashboard Grid -->
+            <div class="grid md:grid-cols-2 gap-6">
+                <!-- Card 1: Exam File Selector / Upload -->
+                <div class="bg-slate-800/60 backdrop-blur border border-slate-700/70 rounded-2xl p-5 md:p-6 flex flex-col justify-between space-y-5 hover:border-brand-500/40 transition">
+                    <div>
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="p-2.5 rounded-xl bg-brand-500/10 text-brand-500">
+                                <i class="fa-solid fa-file-arrow-up text-xl"></i>
+                            </div>
+                            <span id="active-set-badge" class="text-xs px-2.5 py-1 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">Built-in Exam Active</span>
+                        </div>
+                        <h3 class="text-xl font-bold text-white">Exam Question Set</h3>
+                        <p id="exam-set-title" class="text-sm text-slate-300 font-medium mt-1">AZ-900: Microsoft Azure Fundamentals (Preloaded Demo)</p>
+                        <p id="exam-set-count" class="text-xs text-slate-400 mt-1"><i class="fa-solid fa-list-ol mr-1"></i> 10 Sample Questions Loaded</p>
+                    </div>
+
+                    <div class="space-y-2 pt-2 border-t border-slate-700/60">
+                        <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider">Load Custom Exam</label>
+                        <div class="grid grid-cols-2 gap-2">
+                            <!-- Native File Upload -->
+                            <button onclick="document.getElementById('file-input').click()" class="flex items-center justify-center space-x-2 px-3 py-2.5 rounded-xl bg-slate-700/60 hover:bg-slate-700 border border-slate-600 text-xs font-semibold text-slate-200 transition">
+                                <i class="fa-solid fa-upload text-brand-accent"></i>
+                                <span>Upload JSON</span>
+                            </button>
+                            <input type="file" id="file-input" accept=".json" class="hidden" onchange="app.handleFileUpload(event)">
+
+                            <!-- Paste JSON Modal Trigger -->
+                            <button onclick="app.openModal('paste-modal')" class="flex items-center justify-center space-x-2 px-3 py-2.5 rounded-xl bg-slate-700/60 hover:bg-slate-700 border border-slate-600 text-xs font-semibold text-slate-200 transition">
+                                <i class="fa-solid fa-code text-brand-500"></i>
+                                <span>Paste Code</span>
+                            </button>
+                        </div>
+                        <button onclick="app.loadAZ900Demo()" class="w-full py-2 text-xs font-semibold text-brand-accent hover:underline text-center block">
+                            Reset to Default AZ-900 Questions
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Card 2: Configuration & Launch -->
+                <div class="bg-slate-800/60 backdrop-blur border border-slate-700/70 rounded-2xl p-5 md:p-6 flex flex-col justify-between space-y-5">
+                    <div>
+                        <div class="p-2.5 rounded-xl bg-purple-500/10 text-purple-400 w-fit mb-3">
+                            <i class="fa-solid fa-sliders text-xl"></i>
+                        </div>
+                        <h3 class="text-xl font-bold text-white">Exam Settings</h3>
+                        <p class="text-sm text-slate-400 mt-1">Configure options before starting your test.</p>
+                    </div>
+
+                    <div class="space-y-3">
+                        <!-- Mode Selector -->
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider">Mode</label>
+                            <div class="grid grid-cols-2 gap-2 p-1 bg-slate-900/80 rounded-xl border border-slate-700/70">
+                                <button id="btn-mode-test" onclick="app.setMode('test')" class="py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center space-x-1.5 bg-brand-600 text-white shadow-md">
+                                    <i class="fa-solid fa-stopwatch"></i>
+                                    <span>Test Mode</span>
+                                </button>
+                                <button id="btn-mode-practice" onclick="app.setMode('practice')" class="py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center space-x-1.5 text-slate-400 hover:text-slate-200">
+                                    <i class="fa-solid fa-book-open"></i>
+                                    <span>Practice Mode</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Timer Setting (Only Test Mode) -->
+                        <div id="timer-setting-container">
+                            <div class="flex justify-between items-center mb-1">
+                                <label class="text-xs font-semibold text-slate-400">Time Limit</label>
+                                <span id="timer-val-label" class="text-xs font-mono font-bold text-brand-accent">15 Mins</span>
+                            </div>
+                            <input type="range" id="timer-range" min="5" max="120" step="5" value="15" oninput="app.updateTimerLabel(this.value)" class="w-full accent-brand-500 bg-slate-700 h-1.5 rounded-lg appearance-none cursor-pointer">
+                        </div>
+
+                        <!-- Toggles: Randomize Questions & Choices -->
+                        <div class="grid grid-cols-2 gap-3 pt-1">
+                            <label class="flex items-center space-x-2 text-xs font-medium text-slate-300 cursor-pointer">
+                                <input type="checkbox" id="chk-shuffle-q" checked class="rounded border-slate-700 text-brand-600 focus:ring-0 bg-slate-900 w-4 h-4">
+                                <span>Shuffle Questions</span>
+                            </label>
+                            <label class="flex items-center space-x-2 text-xs font-medium text-slate-300 cursor-pointer">
+                                <input type="checkbox" id="chk-shuffle-c" checked class="rounded border-slate-700 text-brand-600 focus:ring-0 bg-slate-900 w-4 h-4">
+                                <span>Shuffle Choices</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Start Button -->
+                    <button onclick="app.startExam()" class="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-500 hover:to-brand-400 text-white font-bold text-sm tracking-wide shadow-lg shadow-brand-500/25 flex items-center justify-center space-x-2 transition active:scale-[0.99]">
+                        <i class="fa-solid fa-play"></i>
+                        <span>BEGIN EXAMINATION</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Exam History Section -->
+            <div class="bg-slate-800/40 border border-slate-800 rounded-2xl p-5 space-y-3">
+                <div class="flex items-center justify-between">
+                    <h4 class="text-sm font-bold text-white flex items-center gap-2">
+                        <i class="fa-solid fa-clock-rotate-left text-slate-400"></i>
+                        <span>Recent Exam Attempts</span>
+                    </h4>
+                    <button onclick="app.clearHistory()" class="text-xs text-red-400 hover:underline">Clear History</button>
+                </div>
+                <div id="history-container" class="space-y-2">
+                    <p class="text-xs text-slate-500 italic">No past exam attempts recorded yet.</p>
+                </div>
+            </div>
+        </section>
+
+
+        <!-- 2. EXAM EXECUTION SCREEN -->
+        <section id="exam-screen" class="hidden fade-in space-y-4">
+            <!-- Progress Bar and Meta Info -->
+            <div class="bg-slate-800/60 border border-slate-700/60 rounded-xl p-3.5 flex flex-col space-y-2">
+                <div class="flex items-center justify-between text-xs font-semibold">
+                    <span id="exam-progress-text" class="text-slate-300">Question 1 of 10</span>
+                    <div class="flex items-center space-x-3">
+                        <span id="question-type-badge" class="px-2 py-0.5 rounded bg-brand-500/20 text-brand-accent text-[11px] font-medium border border-brand-500/30">Single Choice</span>
+                        <button id="btn-flag" onclick="app.toggleFlagCurrent()" class="flex items-center space-x-1 text-slate-400 hover:text-amber-400 transition">
+                            <i class="fa-regular fa-bookmark text-sm" id="icon-flag"></i>
+                            <span class="text-xs" id="text-flag">Bookmark</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Visual Bar -->
+                <div class="w-full bg-slate-700/60 h-2 rounded-full overflow-hidden">
+                    <div id="exam-progress-bar" class="bg-gradient-to-r from-brand-600 to-brand-accent h-full w-0 transition-all duration-300"></div>
+                </div>
+            </div>
+
+            <!-- Question Card -->
+            <div class="bg-slate-800/80 border border-slate-700 rounded-2xl p-5 md:p-7 space-y-6 shadow-xl">
+                <!-- Question Statement -->
+                <div id="question-text" class="text-base md:text-lg font-semibold text-slate-100 leading-relaxed">
+                    Loading question...
+                </div>
+
+                <!-- Options / Choices List -->
+                <div id="choices-container" class="space-y-3">
+                    <!-- Choices will be rendered here dynamically -->
+                </div>
+
+                <!-- Instant Feedback Box (Practice Mode Only) -->
+                <div id="practice-feedback-box" class="hidden rounded-xl p-4 border text-sm space-y-2 fade-in">
+                    <div class="flex items-center space-x-2 font-bold" id="feedback-status">
+                        <!-- Icon + Pass/Fail Text -->
+                    </div>
+                    <div id="feedback-explanation" class="text-slate-300 text-xs md:text-sm leading-relaxed border-t border-slate-700/50 pt-2 mt-2">
+                        <!-- Explanation text -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bottom Navigation Actions -->
+            <div class="flex items-center justify-between gap-3 pt-2">
+                <button id="btn-prev" onclick="app.prevQuestion()" class="flex-1 sm:flex-initial px-5 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-semibold text-sm transition flex items-center justify-center space-x-2 disabled:opacity-40 disabled:cursor-not-allowed">
+                    <i class="fa-solid fa-chevron-left"></i>
+                    <span>Previous</span>
+                </button>
+
+                <div class="flex space-x-2">
+                    <button id="btn-check" onclick="app.checkAnswerPractice()" class="hidden px-5 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-sm transition shadow-lg shadow-emerald-600/20">
+                        Check Answer
+                    </button>
+                    
+                    <button id="btn-next" onclick="app.nextQuestion()" class="flex-1 sm:flex-initial px-6 py-3 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-semibold text-sm transition flex items-center justify-center space-x-2 shadow-lg shadow-brand-500/20">
+                        <span>Next</span>
+                        <i class="fa-solid fa-chevron-right"></i>
+                    </button>
+
+                    <button id="btn-submit-exam" onclick="app.confirmSubmitExam()" class="hidden px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm transition shadow-lg shadow-emerald-600/20">
+                        Finish & Submit
+                    </button>
+                </div>
+            </div>
+        </section>
+
+
+        <!-- 3. RESULTS & SCORE ANALYSIS SCREEN -->
+        <section id="results-screen" class="hidden fade-in space-y-6">
+            <!-- Results Header Card -->
+            <div class="bg-slate-800/80 border border-slate-700 rounded-2xl p-6 text-center space-y-5 shadow-xl relative overflow-hidden">
+                <!-- Background Accent Glow -->
+                <div id="result-glow" class="absolute -top-24 -left-24 w-48 h-48 bg-brand-500/20 rounded-full blur-3xl pointer-events-none"></div>
+
+                <div class="inline-block relative">
+                    <!-- Circular Score Gauge SVG -->
+                    <svg class="w-36 h-36 transform -rotate-90">
+                        <circle cx="72" cy="72" r="60" stroke="currentColor" stroke-width="10" class="text-slate-700" fill="transparent" />
+                        <circle id="score-circle" cx="72" cy="72" r="60" stroke="currentColor" stroke-width="10" class="text-emerald-500 transition-all duration-1000 ease-out" stroke-dasharray="377" stroke-dashoffset="377" stroke-linecap="round" fill="transparent" />
+                    </svg>
+                    <div class="absolute inset-0 flex flex-col items-center justify-center">
+                        <span id="score-percentage" class="text-3xl font-extrabold text-white">0%</span>
+                        <span id="score-fraction" class="text-xs text-slate-400 font-medium">0 / 0</span>
+                    </div>
+                </div>
+
+                <div>
+                    <h3 id="result-status-title" class="text-2xl font-black text-emerald-400 tracking-wide uppercase">PASSED</h3>
+                    <p id="result-status-desc" class="text-xs md:text-sm text-slate-300 mt-1">Great job! You passed the 70% passing threshold for this exam.</p>
+                </div>
+
+                <!-- Metric Pills -->
+                <div class="grid grid-cols-3 gap-2 pt-2 border-t border-slate-700/60 max-w-md mx-auto">
+                    <div class="bg-slate-900/60 p-2.5 rounded-xl border border-slate-700/50">
+                        <span class="text-[10px] text-slate-400 uppercase font-semibold block">Correct</span>
+                        <span id="result-metric-correct" class="text-lg font-bold text-emerald-400">0</span>
+                    </div>
+                    <div class="bg-slate-900/60 p-2.5 rounded-xl border border-slate-700/50">
+                        <span class="text-[10px] text-slate-400 uppercase font-semibold block">Incorrect</span>
+                        <span id="result-metric-wrong" class="text-lg font-bold text-red-400">0</span>
+                    </div>
+                    <div class="bg-slate-900/60 p-2.5 rounded-xl border border-slate-700/50">
+                        <span class="text-[10px] text-slate-400 uppercase font-semibold block">Time Taken</span>
+                        <span id="result-metric-time" class="text-lg font-bold text-brand-accent font-mono">00:00</span>
+                    </div>
+                </div>
+
+                <!-- Action Controls -->
+                <div class="flex flex-wrap items-center justify-center gap-3 pt-2">
+                    <button onclick="app.retakeAll()" class="px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-semibold text-xs md:text-sm transition flex items-center space-x-2">
+                        <i class="fa-solid fa-rotate-right"></i>
+                        <span>Retake Full Exam</span>
+                    </button>
+                    <button id="btn-retake-missed" onclick="app.retakeMissed()" class="px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-semibold text-xs md:text-sm transition flex items-center space-x-2">
+                        <i class="fa-solid fa-filter"></i>
+                        <span>Retake Missed Only</span>
+                    </button>
+                    <button onclick="app.showScreen('welcome-screen')" class="px-4 py-2.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-200 font-semibold text-xs md:text-sm transition">
+                        Dashboard
+                    </button>
+                </div>
+            </div>
+
+            <!-- Detailed Question Breakdown Review -->
+            <div class="space-y-4">
+                <h4 class="text-lg font-bold text-white flex items-center justify-between">
+                    <span>Detailed Question Review</span>
+                    <span id="review-filter-info" class="text-xs text-slate-400 font-normal">Showing all questions</span>
+                </h4>
+
+                <div id="review-list-container" class="space-y-4">
+                    <!-- Dynamically populated review cards -->
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- QUESTION PALETTE / GRID MODAL -->
+    <div id="palette-modal" class="hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden fade-in">
+            <div class="p-4 border-b border-slate-800 flex items-center justify-between">
+                <h3 class="font-bold text-white text-base flex items-center space-x-2">
+                    <i class="fa-solid fa-th-large text-brand-500"></i>
+                    <span>Question Navigator</span>
+                </h3>
+                <button onclick="app.closeModal('palette-modal')" class="text-slate-400 hover:text-white p-1">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+            
+            <div class="p-4 overflow-y-auto flex-1 space-y-4">
+                <!-- Legend -->
+                <div class="flex flex-wrap items-center gap-3 text-xs text-slate-400 bg-slate-800/50 p-2.5 rounded-xl border border-slate-800">
+                    <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-slate-700 border border-slate-600 inline-block"></span> Unanswered</span>
+                    <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-brand-600 inline-block"></span> Answered</span>
+                    <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-amber-500 inline-block"></span> Flagged</span>
+                </div>
+
+                <!-- Grid Buttons -->
+                <div id="palette-grid" class="grid grid-cols-5 sm:grid-cols-8 gap-2">
+                    <!-- Populated via JS -->
+                </div>
+            </div>
+
+            <div class="p-3 border-t border-slate-800 bg-slate-900/90 text-right">
+                <button onclick="app.closeModal('palette-modal')" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-lg">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- PASTE JSON MODAL -->
+    <div id="paste-modal" class="hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-xl w-full flex flex-col shadow-2xl overflow-hidden fade-in">
+            <div class="p-4 border-b border-slate-800 flex items-center justify-between">
+                <h3 class="font-bold text-white text-base flex items-center space-x-2">
+                    <i class="fa-solid fa-code text-brand-500"></i>
+                    <span>Paste Custom JSON Questions</span>
+                </h3>
+                <button onclick="app.closeModal('paste-modal')" class="text-slate-400 hover:text-white p-1">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+            
+            <div class="p-4 space-y-3">
+                <p class="text-xs text-slate-400">Paste an array of question JSON objects matching standard VCE schema structure.</p>
+                <textarea id="json-textarea" rows="10" placeholder='[
+  {
+    "id": 1,
+    "question": "What is Cloud Computing?",
+    "choices": [
+      { "id": "A", "text": "Delivery of computing services over internet" },
+      { "id": "B", "text": "Physical hardware stored at office" }
+    ],
+    "correctAnswers": ["A"],
+    "explanation": "Cloud computing is the delivery of compute, storage, and networking over the internet."
+  }
+]' class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs font-mono text-slate-200 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500"></textarea>
+            </div>
+
+            <div class="p-4 border-t border-slate-800 bg-slate-900/90 flex justify-end space-x-2">
+                <button onclick="app.closeModal('paste-modal')" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-xl">Cancel</button>
+                <button onclick="app.processPastedJSON()" class="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-brand-500/20">Load Questions</button>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- APPLICATION JAVASCRIPT ENGINE -->
+    <script>
+        /**
+         * AZ-900 Built-in Sample Questions Data
+         */
+        const SAMPLE_AZ900_QUESTIONS = [
+            {
+                id: "az900-q1",
+                question: "Which cloud computing model offers the highest level of flexibility and control over your cloud resources, including operating system and networking configuration?",
+                choices: [
+                    { id: "A", text: "Software as a Service (SaaS)" },
+                    { id: "B", text: "Infrastructure as a Service (IaaS)" },
+                    { id: "C", text: "Platform as a Service (PaaS)" },
+                    { id: "D", text: "Serverless Computing" }
+                ],
+                correctAnswers: ["B"],
+                explanation: "Infrastructure as a Service (IaaS) provides maximum flexibility and control by granting management access to virtual machines, operating systems, storage, and networking."
+            },
+            {
+                id: "az900-q2",
+                question: "Your company plans to migrate applications to Azure. You want to ensure that services remain available even if an entire Azure data center experiences an outage. Which feature should you deploy to?",
+                choices: [
+                    { id: "A", text: "Resource Groups" },
+                    { id: "B", text: "Availability Zones" },
+                    { id: "C", text: "Fault Domains" },
+                    { id: "D", text: "Azure Subscriptions" }
+                ],
+                correctAnswers: ["B"],
+                explanation: "Availability Zones are physically separate locations within an Azure region, each equipped with independent power, cooling, and networking. They protect against data center failures."
+            },
+            {
+                id: "az900-q3",
+                question: "Which of the following cloud benefit guarantees that workloads scale automatically to handle sudden spikes in web traffic without human intervention? (Select TWO)",
+                choices: [
+                    { id: "A", text: "Elasticity" },
+                    { id: "B", text: "Auto-Scaling" },
+                    { id: "C", text: "High Availability" },
+                    { id: "D", text: "Geo-distribution" }
+                ],
+                correctAnswers: ["A", "B"],
+                explanation: "Elasticity refers to the capability of dynamically adding or removing resources as demand changes, while Auto-scaling is the mechanism implementing this behavior automatically."
+            },
+            {
+                id: "az900-q4",
+                question: "Which Azure service provides a centralized repository for securely storing application secrets, API keys, certificates, and passwords?",
+                choices: [
+                    { id: "A", text: "Azure Information Protection" },
+                    { id: "B", text: "Azure Key Vault" },
+                    { id: "C", text: "Azure Security Center" },
+                    { id: "D", text: "Azure Sentinel" }
+                ],
+                correctAnswers: ["B"],
+                explanation: "Azure Key Vault helps solve key management problems such as storing cryptographic keys, secrets, and TLS certificates securely."
+            },
+            {
+                id: "az900-q5",
+                question: "What is the primary operational objective of using Azure Resource Management (ARM) templates?",
+                choices: [
+                    { id: "A", text: "To automate infrastructure deployment using Infrastructure as Code (IaC)" },
+                    { id: "B", text: "To monitor real-time security alerts" },
+                    { id: "C", text: "To calculate total cost of ownership before migration" },
+                    { id: "D", text: "To manage user access permissions across subscriptions" }
+                ],
+                correctAnswers: ["A"],
+                explanation: "ARM templates utilize JSON syntax to define infrastructure declaratively, allowing automated, repeated, and consistent deployment of Azure resources."
+            },
+            {
+                id: "az900-q6",
+                question: "True or False: In a SaaS (Software as a Service) model, the customer is responsible for applying OS patches and database updates.",
+                choices: [
+                    { id: "A", text: "True" },
+                    { id: "B", text: "False" }
+                ],
+                correctAnswers: ["B"],
+                explanation: "False. In SaaS, the cloud vendor manages everything, including physical servers, networking, operating systems, and software updates. The customer only manages data and user access."
+            },
+            {
+                id: "az900-q7",
+                question: "Which Azure tool provides personalized recommendations to help optimize your deployments for High Availability, Security, Performance, Operational Excellence, and Cost?",
+                choices: [
+                    { id: "A", text: "Azure Monitor" },
+                    { id: "B", text: "Azure Advisor" },
+                    { id: "C", text: "Azure Service Health" },
+                    { id: "D", text: "Azure DevOps" }
+                ],
+                correctAnswers: ["B"],
+                explanation: "Azure Advisor analyzes your configuration and usage telemetry to recommend solutions that help improve cost-effectiveness, performance, reliability, and security."
+            },
+            {
+                id: "az900-q8",
+                question: "Which storage redundancy option replicates your data to a secondary region hundreds of miles away from the primary location?",
+                choices: [
+                    { id: "A", text: "Locally Redundant Storage (LRS)" },
+                    { id: "B", text: "Zone Redundant Storage (ZRS)" },
+                    { id: "C", text: "Geo-Redundant Storage (GRS)" },
+                    { id: "D", text: "Read-Access Locally Redundant Storage (RA-LRS)" }
+                ],
+                correctAnswers: ["C"],
+                explanation: "Geo-Redundant Storage (GRS) copies your data synchronously three times within the primary region, then asynchronously copies it to a secondary paired region."
+            },
+            {
+                id: "az900-q9",
+                question: "Which architectural element represents the top-level container for managing organizational subscriptions and policy hierarchies in Azure?",
+                choices: [
+                    { id: "A", text: "Resource Groups" },
+                    { id: "B", text: "Management Groups" },
+                    { id: "C", text: "Azure Regions" },
+                    { id: "D", text: "Availability Sets" }
+                ],
+                correctAnswers: ["B"],
+                explanation: "Management groups provide governance scopes above subscriptions. Policies and role assignments applied to a management group are inherited by all child subscriptions."
+            },
+            {
+                id: "az900-q10",
+                question: "What is the term for operational expenses incurred on a pay-as-you-go basis, where you only pay for services consumed with zero upfront hardware costs?",
+                choices: [
+                    { id: "A", text: "Capital Expenditure (CapEx)" },
+                    { id: "B", text: "Operational Expenditure (OpEx)" },
+                    { id: "C", text: "Fixed Cost Investment" },
+                    { id: "D", text: "Amortized Cost" }
+                ],
+                correctAnswers: ["B"],
+                explanation: "Operational Expenditure (OpEx) is spending money on products and services now and being billed for them as you use them, avoiding upfront physical infrastructure expenditure (CapEx)."
+            }
+        ];
+
+
+    /**
+     * AZ-900 Built-in Sample Questions Data
+     */
+    //const SAMPLE_AZ900_QUESTIONS = [
+        // ... keep your existing 10 sample questions here, unchanged ...
+        // (I won't re-paste them; copy from your current file)
+    //];
+
+    /**
+     * VCE Exam Simulator Core Application Object
+     */
+    class VCESimulatorApp {
+        constructor() {
+            this.activeQuestions = [...SAMPLE_AZ900_QUESTIONS];
+            this.datasetTitle = "AZ-900: Microsoft Azure Fundamentals (Preloaded Demo)";
+
+            this.mode = 'test';
+            this.timerMinutes = 15;
+            this.shuffleQuestions = true;
+            this.shuffleChoices = true;
+
+            this.sessionQuestions = [];
+            this.currentIndex = 0;
+            this.userAnswers = {};
+            this.flaggedSet = new Set();
+            this.checkedQuestions = new Set();
+
+            this.timerInterval = null;
+            this.timeRemainingSeconds = 0;
+            this.totalExamSeconds = 0;
+
+            this.STORAGE_KEY_HISTORY = 'vce_exam_history_v1';
+            this.STORAGE_KEY_SAVED_SESSION = 'vce_active_session_v1';
+
+            this.init();
+        }
+
+        init() {
+            this.renderHistory();
+            this.checkSavedSession();
+        }
+
+        // ---------- UI navigation ----------
+        showScreen(screenId) {
+            ['welcome-screen', 'exam-screen', 'results-screen'].forEach(id =>
+                document.getElementById(id).classList.add('hidden')
+            );
+            document.getElementById(screenId).classList.remove('hidden');
+
+            const navControls = document.getElementById('nav-exam-controls');
+            navControls.classList.toggle('hidden', screenId !== 'exam-screen');
+
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        openModal(id) { document.getElementById(id).classList.remove('hidden'); }
+        closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+
+        toggleFullscreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen?.().catch(() => {});
+            } else {
+                document.exitFullscreen?.().catch(() => {});
+            }
+        }
+
+        // ---------- Configuration ----------
+        setMode(mode) {
+            this.mode = mode;
+            const btnTest = document.getElementById('btn-mode-test');
+            const btnPractice = document.getElementById('btn-mode-practice');
+            const timerContainer = document.getElementById('timer-setting-container');
+
+            if (mode === 'test') {
+                btnTest.className = "py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center space-x-1.5 bg-brand-600 text-white shadow-md";
+                btnPractice.className = "py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center space-x-1.5 text-slate-400 hover:text-slate-200";
+                timerContainer.classList.remove('opacity-40', 'pointer-events-none');
+            } else {
+                btnPractice.className = "py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center space-x-1.5 bg-brand-600 text-white shadow-md";
+                btnTest.className = "py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center space-x-1.5 text-slate-400 hover:text-slate-200";
+                timerContainer.classList.add('opacity-40', 'pointer-events-none');
+            }
+        }
+
+        updateTimerLabel(val) {
+            this.timerMinutes = parseInt(val, 10);
+            document.getElementById('timer-val-label').innerText = `${val} Mins`;
+        }
+
+        loadAZ900Demo() {
+            this.activeQuestions = [...SAMPLE_AZ900_QUESTIONS];
+            this.datasetTitle = "AZ-900: Microsoft Azure Fundamentals (Preloaded Demo)";
+            this.updateQuestionSetUI();
+        }
+
+        updateQuestionSetUI() {
+            document.getElementById('exam-set-title').innerText = this.datasetTitle;
+            document.getElementById('exam-set-count').innerHTML =
+                `<i class="fa-solid fa-list-ol mr-1"></i> ${this.activeQuestions.length} Questions Loaded`;
+        }
+
+        // ---------- File upload / paste ----------
+        handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const json = JSON.parse(e.target.result);
+                    this.validateAndSetQuestions(json, file.name);
+                } catch (err) {
+                    alert("Invalid JSON file format. Please check the structure.\n\n" + err.message);
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        processPastedJSON() {
+            const text = document.getElementById('json-textarea').value.trim();
+            if (!text) return;
+            try {
+                const json = JSON.parse(text);
+                this.validateAndSetQuestions(json, "Custom Pasted JSON Exam");
+                this.closeModal('paste-modal');
+            } catch (err) {
+                alert("Failed to parse JSON. Make sure syntax is valid.\n\n" + err.message);
+            }
+        }
+
+        /**
+         * Accepts many common VCE/community JSON shapes.
+         * Returns { questions, dropped, dropReasons }
+         */
+        normalizeQuestions(raw) {
+            if (!Array.isArray(raw)) {
+                return { questions: [], dropped: 0, dropReasons: ['Top-level JSON is not an array.'] };
+            }
+
+            const questions = [];
+            const dropReasons = [];
+
+            raw.forEach((q, idx) => {
+                if (!q || typeof q !== 'object') {
+                    dropReasons.push(`Item #${idx + 1}: not an object.`);
+                    return;
+                }
+
+                const questionText = String(
+                    q.question || q.q || q.text || q.stem || ''
+                ).trim();
+                if (!questionText) {
+                    dropReasons.push(`Item #${idx + 1}: missing question text.`);
+                    return;
+                }
+
+                // --- normalize choices ---
+                const rawChoices = q.choices || q.options || q.answers || [];
+                if (!Array.isArray(rawChoices) || rawChoices.length === 0) {
+                    dropReasons.push(`Item #${idx + 1}: no choices array.`);
+                    return;
+                }
+
+                const choices = rawChoices.map((c, i) => {
+                    const fallbackId = String.fromCharCode(65 + i); // A, B, C...
+                    if (typeof c === 'string') {
+                        return { id: fallbackId, text: c };
+                    }
+                    return {
+                        id: String(c.id || c.key || c.letter || fallbackId),
+                        text: String(c.text || c.value || c.label || c.choice || '')
+                    };
+                });
+
+                // --- normalize answer key ---
+                let answerRaw =
+                    q.correctAnswers || q.correct || q.answer || q.answers || q.key || [];
+                if (typeof answerRaw === 'string') {
+                    // "A" -> ["A"]  |  "A,B" -> ["A","B"]  |  "A B" -> ["A","B"]
+                    answerRaw = answerRaw
+                        .split(/[\s,;|]+/)
+                        .map(s => s.trim())
+                        .filter(Boolean);
+                } else if (Array.isArray(answerRaw)) {
+                    // Handle things like [true, false, true] -> indices mapped to ids
+                    if (answerRaw.every(a => typeof a === 'boolean')) {
+                        answerRaw = answerRaw
+                            .map((v, i) => v ? String.fromCharCode(65 + i) : null)
+                            .filter(Boolean);
+                    }
+                } else {
+                    answerRaw = [];
+                }
+
+                // If answers are full choice *texts* rather than ids, map them back
+                const choiceIds = new Set(choices.map(c => c.id));
+                const choiceByText = new Map(
+                    choices.map(c => [c.text.toLowerCase().trim(), c.id])
+                );
+
+                let answerIds = answerRaw
+                    .map(a => {
+                        if (typeof a !== 'string') return null;
+                        const s = a.trim();
+                        if (choiceIds.has(s)) return s;
+                        // Match by text
+                        const byText = choiceByText.get(s.toLowerCase());
+                        if (byText) return byText;
+                        // Match by letter even if casing differs
+                        const upper = s.toUpperCase();
+                        if (choiceIds.has(upper)) return upper;
+                        return null;
+                    })
+                    .filter(Boolean);
+
+                // If still empty and there's a correctAnswerIndex
+                if (answerIds.length === 0 && Number.isInteger(q.correctAnswerIndex)) {
+                    const c = choices[q.correctAnswerIndex];
+                    if (c) answerIds = [c.id];
+                }
+                // If still empty and a single correctChoice / correctIndex pair
+                if (answerIds.length === 0 && Number.isInteger(q.answerIndex)) {
+                    const c = choices[q.answerIndex];
+                    if (c) answerIds = [c.id];
+                }
+
+                if (answerIds.length === 0) {
+                    dropReasons.push(`Item #${idx + 1}: could not determine correct answer.`);
+                    return;
+                }
+
+                questions.push({
+                    id: q.id != null ? String(q.id) : `q-${idx + 1}`,
+                    question: questionText,
+                    choices,
+                    correctAnswers: answerIds,
+                    explanation: String(q.explanation || q.reason || q.rationale || "No explanation provided."),
+                    isMulti: answerIds.length > 1 || q.type === 'multi' || q.multiSelect === true
+                });
+            });
+
+            return { questions, dropped: raw.length - questions.length, dropReasons };
+        }
+
+        validateAndSetQuestions(data, sourceTitle) {
+            const { questions, dropped, dropReasons } = this.normalizeQuestions(data);
+
+            if (questions.length === 0) {
+                alert(
+                    `No usable questions were found.\n\n` +
+                    `Dropped items: ${dropped}\n\n` +
+                    dropReasons.slice(0, 5).join('\n')
+                );
+                return;
+            }
+
+            this.activeQuestions = questions;
+            this.datasetTitle = sourceTitle;
+            this.updateQuestionSetUI();
+
+            if (dropped > 0) {
+                alert(
+                    `Loaded ${questions.length} question(s).\n\n` +
+                    `Skipped ${dropped} malformed item(s).\n\n` +
+                    dropReasons.slice(0, 5).join('\n')
+                );
+            }
+        }
+
+        // ---------- Exam execution ----------
+        startExam(questionsToUse = null) {
+            const rawQuestions = questionsToUse || this.activeQuestions;
+
+            this.shuffleQuestions = document.getElementById('chk-shuffle-q').checked;
+            this.shuffleChoices = document.getElementById('chk-shuffle-c').checked;
+
+            let prepared = JSON.parse(JSON.stringify(rawQuestions));
+            if (this.shuffleQuestions) prepared = this.arrayShuffle(prepared);
+            if (this.shuffleChoices) {
+                prepared.forEach(q => { q.choices = this.arrayShuffle(q.choices); });
+            }
+
+            this.sessionQuestions = prepared;
+            this.currentIndex = 0;
+            this.userAnswers = {};
+            this.flaggedSet.clear();
+            this.checkedQuestions.clear();
+
+            if (this.mode === 'test') {
+                this.totalExamSeconds = this.timerMinutes * 60;
+                this.timeRemainingSeconds = this.totalExamSeconds;
+                this.startTimer();
+            } else {
+                document.getElementById('nav-timer').classList.add('hidden');
+            }
+
+            this.showScreen('exam-screen');
+            this.renderCurrentQuestion();
+            this.saveActiveSession();
+        }
+
+        arrayShuffle(arr) {
+            const a = [...arr];
+            for (let i = a.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [a[i], a[j]] = [a[j], a[i]];
+            }
+            return a;
+        }
+
+        startTimer() {
+            const timerNav = document.getElementById('nav-timer');
+            const timerText = document.getElementById('timer-text');
+            timerNav.classList.remove('hidden');
+
+            if (this.timerInterval) clearInterval(this.timerInterval);
+
+            const tick = () => {
+                const mins = Math.floor(this.timeRemainingSeconds / 60);
+                const secs = this.timeRemainingSeconds % 60;
+                timerText.innerText = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+
+                timerNav.classList.toggle('text-red-400', this.timeRemainingSeconds <= 60);
+                timerNav.classList.toggle('border-red-500/40', this.timeRemainingSeconds <= 60);
+                timerNav.classList.toggle('pulse-subtle', this.timeRemainingSeconds <= 60);
+
+                if (this.timeRemainingSeconds <= 0) {
+                    clearInterval(this.timerInterval);
+                    alert("Time is up! Your exam will now be submitted.");
+                    this.submitExam();
+                }
+                this.timeRemainingSeconds--;
+            };
+
+            tick();
+            this.timerInterval = setInterval(tick, 1000);
+        }
+
+        stopTimer() {
+            if (this.timerInterval) {
+                clearInterval(this.timerInterval);
+                this.timerInterval = null;
+            }
+        }
+
+        /** Convert \n to <br> and escape HTML. */
+        formatText(text) {
+            return this.escapeHTML(String(text || '')).replace(/\n/g, '<br>');
+        }
+
+        renderCurrentQuestion() {
+            const q = this.sessionQuestions[this.currentIndex];
+            const total = this.sessionQuestions.length;
+
+            document.getElementById('exam-progress-text').innerText = `Question ${this.currentIndex + 1} of ${total}`;
+            document.getElementById('exam-progress-bar').style.width =
+                `${((this.currentIndex + 1) / total) * 100}%`;
+
+            const isMulti = (q.correctAnswers && q.correctAnswers.length > 1) || q.isMulti === true;
+            const badge = document.getElementById('question-type-badge');
+            badge.innerText = isMulti ? 'Multi-Select' : 'Single Choice';
+            badge.className = isMulti
+                ? "px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 text-[11px] font-medium border border-purple-500/30"
+                : "px-2 py-0.5 rounded bg-brand-500/20 text-brand-accent text-[11px] font-medium border border-brand-500/30";
+
+            this.updateFlagUI();
+
+            document.getElementById('question-text').innerHTML = this.formatText(q.question);
+
+            const choicesContainer = document.getElementById('choices-container');
+            choicesContainer.innerHTML = '';
+            const currentAnswers = this.userAnswers[q.id] || [];
+
+            q.choices.forEach(choice => {
+                const isSelected = currentAnswers.includes(choice.id);
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = `w-full text-left p-4 rounded-xl border transition flex items-start space-x-3.5 ${
+                    isSelected
+                        ? 'bg-brand-500/15 border-brand-500 text-white shadow-md'
+                        : 'bg-slate-900/60 border-slate-700/80 hover:border-slate-600 text-slate-200'
+                }`;
+
+                const icon = isMulti
+                    ? (isSelected ? '<i class="fa-solid fa-square-check text-brand-accent text-lg"></i>' : '<i class="fa-regular fa-square text-slate-500 text-lg"></i>')
+                    : (isSelected ? '<i class="fa-solid fa-circle-dot text-brand-accent text-lg"></i>' : '<i class="fa-regular fa-circle text-slate-500 text-lg"></i>');
+
+                btn.innerHTML = `
+                    <div class="mt-0.5 shrink-0">${icon}</div>
+                    <div class="flex-1 text-sm font-medium leading-normal">
+                        <span class="font-bold text-slate-400 mr-1.5">${this.escapeHTML(choice.id)}.</span>
+                        ${this.formatText(choice.text)}
+                    </div>
+                `;
+                btn.onclick = () => this.selectChoice(q.id, choice.id, isMulti);
+                choicesContainer.appendChild(btn);
+            });
+
+            const btnCheck = document.getElementById('btn-check');
+            const feedbackBox = document.getElementById('practice-feedback-box');
+
+            if (this.mode === 'practice') {
+                btnCheck.classList.remove('hidden');
+                if (this.checkedQuestions.has(q.id)) {
+                    this.showPracticeFeedback(q);
+                } else {
+                    feedbackBox.classList.add('hidden');
+                }
+            } else {
+                btnCheck.classList.add('hidden');
+                feedbackBox.classList.add('hidden');
+            }
+
+            document.getElementById('btn-prev').disabled = this.currentIndex === 0;
+
+            const btnNext = document.getElementById('btn-next');
+            const btnSubmit = document.getElementById('btn-submit-exam');
+
+            if (this.currentIndex === total - 1) {
+                btnNext.classList.add('hidden');
+                btnSubmit.classList.remove('hidden');
+            } else {
+                btnNext.classList.remove('hidden');
+                btnSubmit.classList.add('hidden');
+            }
+        }
+
+        selectChoice(questionId, choiceId, isMulti) {
+            let current = this.userAnswers[questionId] ? [...this.userAnswers[questionId]] : [];
+
+            if (isMulti) {
+                current = current.includes(choiceId)
+                    ? current.filter(id => id !== choiceId)
+                    : [...current, choiceId];
+            } else {
+                current = [choiceId];
+            }
+
+            this.userAnswers[questionId] = current;
+            this.saveActiveSession();
+            this.renderCurrentQuestion();
+        }
+
+        checkAnswerPractice() {
+            const q = this.sessionQuestions[this.currentIndex];
+            if (!(this.userAnswers[q.id] || []).length) {
+                alert("Please select an answer before checking.");
+                return;
+            }
+            this.checkedQuestions.add(q.id);
+            this.showPracticeFeedback(q);
+        }
+
+        showPracticeFeedback(question) {
+            const feedbackBox = document.getElementById('practice-feedback-box');
+            const statusEl = document.getElementById('feedback-status');
+            const expEl = document.getElementById('feedback-explanation');
+
+            const selected = (this.userAnswers[question.id] || []).sort();
+            const correct = [...question.correctAnswers].sort();
+            const isCorrect = JSON.stringify(selected) === JSON.stringify(correct);
+
+            feedbackBox.classList.remove(
+                'hidden', 'bg-emerald-500/10', 'border-emerald-500/30',
+                'bg-red-500/10', 'border-red-500/30'
+            );
+
+            if (isCorrect) {
+                feedbackBox.classList.add('bg-emerald-500/10', 'border-emerald-500/30');
+                statusEl.className = "flex items-center space-x-2 font-bold text-emerald-400";
+                statusEl.innerHTML = `<i class="fa-solid fa-circle-check text-base"></i><span>Correct Answer!</span>`;
+            } else {
+                feedbackBox.classList.add('bg-red-500/10', 'border-red-500/30');
+                statusEl.className = "flex items-center space-x-2 font-bold text-red-400";
+                statusEl.innerHTML = `<i class="fa-solid fa-circle-xmark text-base"></i><span>Incorrect. Correct answer is: ${correct.join(', ')}</span>`;
+            }
+
+            expEl.innerHTML = this.formatText(question.explanation);
+        }
+
+        toggleFlagCurrent() {
+            const q = this.sessionQuestions[this.currentIndex];
+            if (this.flaggedSet.has(q.id)) this.flaggedSet.delete(q.id);
+            else this.flaggedSet.add(q.id);
+            this.updateFlagUI();
+            this.saveActiveSession();
+        }
+
+        updateFlagUI() {
+            const q = this.sessionQuestions[this.currentIndex];
+            const isFlagged = this.flaggedSet.has(q.id);
+
+            const icon = document.getElementById('icon-flag');
+            const text = document.getElementById('text-flag');
+
+            icon.className = isFlagged
+                ? "fa-solid fa-bookmark text-amber-400 text-sm"
+                : "fa-regular fa-bookmark text-slate-400 text-sm";
+            text.className = isFlagged
+                ? "text-xs text-amber-400 font-bold"
+                : "text-xs text-slate-400 font-normal";
+
+            const badge = document.getElementById('badge-flagged-count');
+            badge.innerText = this.flaggedSet.size;
+            badge.classList.toggle('hidden', this.flaggedSet.size === 0);
+        }
+
+        nextQuestion() {
+            if (this.currentIndex < this.sessionQuestions.length - 1) {
+                this.currentIndex++;
+                this.renderCurrentQuestion();
+            }
+        }
+
+        prevQuestion() {
+            if (this.currentIndex > 0) {
+                this.currentIndex--;
+                this.renderCurrentQuestion();
+            }
+        }
+
+        // ---------- Palette ----------
+        toggleQuestionPalette() {
+            const grid = document.getElementById('palette-grid');
+            grid.innerHTML = '';
+
+            this.sessionQuestions.forEach((q, idx) => {
+                const isCurrent = idx === this.currentIndex;
+                const isAnswered = (this.userAnswers[q.id] || []).length > 0;
+                const isFlagged = this.flaggedSet.has(q.id);
+
+                let cls = "bg-slate-800 text-slate-300 border-slate-700";
+                if (isAnswered) cls = "bg-brand-600/30 border-brand-500 text-brand-accent";
+                if (isFlagged) cls = "bg-amber-500/20 border-amber-500 text-amber-400";
+                if (isCurrent) cls += " ring-2 ring-white font-black scale-105";
+
+                const btn = document.createElement('button');
+                btn.className = `h-10 rounded-xl border flex items-center justify-center font-semibold text-xs transition ${cls}`;
+                btn.innerText = idx + 1;
+                btn.onclick = () => {
+                    this.currentIndex = idx;
+                    this.renderCurrentQuestion();
+                    this.closeModal('palette-modal');
+                };
+                grid.appendChild(btn);
+            });
+
+            this.openModal('palette-modal');
+        }
+
+        // ---------- Confirm ----------
+        confirmQuitExam() {
+            if (confirm("Are you sure you want to quit this exam? Your progress will be reset.")) {
+                this.stopTimer();
+                this.clearActiveSessionStorage();
+                this.showScreen('welcome-screen');
+            }
+        }
+
+        confirmSubmitExam() {
+            const unanswered = this.sessionQuestions.filter(
+                q => !(this.userAnswers[q.id] && this.userAnswers[q.id].length)
+            ).length;
+            const msg = unanswered
+                ? `You still have ${unanswered} unanswered question(s). Submit anyway?`
+                : "Are you ready to submit your exam?";
+            if (confirm(msg)) this.submitExam();
+        }
+
+        // ---------- Submit / Results ----------
+        submitExam() {
+            this.stopTimer();
+
+            let correctCount = 0;
+            const missed = [];
+
+            this.sessionQuestions.forEach(q => {
+                const sel = (this.userAnswers[q.id] || []).sort();
+                const cor = [...q.correctAnswers].sort();
+                if (JSON.stringify(sel) === JSON.stringify(cor)) correctCount++;
+                else missed.push(q);
+            });
+
+            const total = this.sessionQuestions.length;
+            const percentage = Math.round((correctCount / total) * 100);
+            const isPassed = percentage >= 70;
+
+            const elapsed = this.totalExamSeconds - Math.max(0, this.timeRemainingSeconds);
+            const mins = Math.floor(elapsed / 60);
+            const secs = elapsed % 60;
+            const timeFormatted = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+
+            document.getElementById('score-percentage').innerText = `${percentage}%`;
+            document.getElementById('score-fraction').innerText = `${correctCount} of ${total} Correct`;
+            document.getElementById('result-metric-correct').innerText = correctCount;
+            document.getElementById('result-metric-wrong').innerText = total - correctCount;
+            document.getElementById('result-metric-time').innerText = timeFormatted;
+
+            const circle = document.getElementById('score-circle');
+            const title = document.getElementById('result-status-title');
+            const desc = document.getElementById('result-status-desc');
+            const glow = document.getElementById('result-glow');
+
+            circle.style.strokeDashoffset = 377 - (377 * percentage) / 100;
+
+            if (isPassed) {
+                circle.className.baseVal = "text-emerald-500 transition-all duration-1000 ease-out";
+                title.innerText = "EXAM PASSED";
+                title.className = "text-2xl font-black text-emerald-400 tracking-wide uppercase";
+                desc.innerText = `Congratulations! You scored ${percentage}%, meeting the 70% requirement.`;
+                glow.className = "absolute -top-24 -left-24 w-48 h-48 bg-emerald-500/20 rounded-full blur-3xl pointer-events-none";
+            } else {
+                circle.className.baseVal = "text-red-500 transition-all duration-1000 ease-out";
+                title.innerText = "EXAM FAILED";
+                title.className = "text-2xl font-black text-red-400 tracking-wide uppercase";
+                desc.innerText = `You scored ${percentage}%. You need 70% or higher to pass. Review missed items below.`;
+                glow.className = "absolute -top-24 -left-24 w-48 h-48 bg-red-500/20 rounded-full blur-3xl pointer-events-none";
+            }
+
+            const btnMissed = document.getElementById('btn-retake-missed');
+            if (missed.length === 0) {
+                btnMissed.classList.add('hidden');
+            } else {
+                btnMissed.classList.remove('hidden');
+                btnMissed.onclick = () => this.startExam(missed);
+            }
+
+            this.renderReviewList();
+
+            this.saveHistoryRecord({
+                date: new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                title: this.datasetTitle,
+                score: percentage,
+                passed: isPassed,
+                mode: this.mode
+            });
+
+            this.clearActiveSessionStorage();
+            this.showScreen('results-screen');
+        }
+
+        renderReviewList() {
+            const container = document.getElementById('review-list-container');
+            container.innerHTML = '';
+
+            this.sessionQuestions.forEach((q, idx) => {
+                const sel = (this.userAnswers[q.id] || []).sort();
+                const cor = [...q.correctAnswers].sort();
+                const isCorrect = JSON.stringify(sel) === JSON.stringify(cor);
+                const isMulti = q.correctAnswers.length > 1 || q.isMulti === true;
+
+                const card = document.createElement('div');
+                card.className = `p-5 rounded-2xl border ${
+                    isCorrect ? 'bg-slate-800/40 border-slate-700/60' : 'bg-red-950/20 border-red-500/30'
+                } space-y-4`;
+
+                let choicesHTML = '';
+                q.choices.forEach(choice => {
+                    const isUserChoice = sel.includes(choice.id);
+                    const isRight = cor.includes(choice.id);
+
+                    let cls = "bg-slate-900 border-slate-700 text-slate-400";
+                    if (isRight) cls = "bg-emerald-500/20 border-emerald-500 text-emerald-400 font-bold";
+                    else if (isUserChoice && !isRight) cls = "bg-red-500/20 border-red-500 text-red-400 line-through";
+
+                    choicesHTML += `
+                        <div class="p-3 rounded-xl border ${cls} text-xs md:text-sm flex items-start justify-between">
+                            <div>
+                                <span class="font-bold mr-1.5">${this.escapeHTML(choice.id)}.</span>
+                                ${this.formatText(choice.text)}
+                            </div>
+                            ${isRight ? '<span class="text-[10px] uppercase font-bold bg-emerald-500/30 text-emerald-300 px-2 py-0.5 rounded ml-2">Correct</span>' : ''}
+                            ${isUserChoice && !isRight ? '<span class="text-[10px] uppercase font-bold bg-red-500/30 text-red-300 px-2 py-0.5 rounded ml-2">Your Answer</span>' : ''}
+                        </div>`;
+                });
+
+                card.innerHTML = `
+                    <div class="flex items-start justify-between gap-3">
+                        <span class="text-xs font-bold px-2.5 py-1 rounded-md ${
+                            isCorrect
+                                ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                                : 'bg-red-500/10 text-red-400 border border-red-500/20'
+                        }">
+                            Q${idx + 1} - ${isCorrect ? 'CORRECT' : 'INCORRECT'}
+                        </span>
+                        <span class="text-xs text-slate-400 font-mono">${isMulti ? 'Multi-Select' : 'Single Choice'}</span>
+                    </div>
+                    <p class="text-sm font-semibold text-slate-100">${this.formatText(q.question)}</p>
+                    <div class="space-y-2">${choicesHTML}</div>
+                    <div class="p-3 rounded-xl bg-slate-900/80 border border-slate-800 text-xs text-slate-300 leading-relaxed">
+                        <strong class="text-brand-accent block mb-1"><i class="fa-solid fa-lightbulb mr-1"></i> Explanation:</strong>
+                        ${this.formatText(q.explanation)}
+                    </div>`;
+                container.appendChild(card);
+            });
+        }
+
+        retakeAll() {
+            this.startExam();
+        }
+
+        retakeMissed() {
+            // Submit the exam and reload only missed ones; if not on results screen,
+            // we can't know missed, so re-run from active set.
+            const missed = this.sessionQuestions.filter(q => {
+                const sel = (this.userAnswers[q.id] || []).sort();
+                const cor = [...q.correctAnswers].sort();
+                return JSON.stringify(sel) !== JSON.stringify(cor);
+            });
+            if (missed.length === 0) {
+                alert("No missed questions to retake. Starting a full retake instead.");
+                this.startExam();
+            } else {
+                this.startExam(missed);
+            }
+        }
+
+        // ---------- History ----------
+        saveHistoryRecord(record) {
+            try {
+                const list = JSON.parse(localStorage.getItem(this.STORAGE_KEY_HISTORY) || '[]');
+                list.unshift(record);
+                if (list.length > 15) list.pop();
+                localStorage.setItem(this.STORAGE_KEY_HISTORY, JSON.stringify(list));
+                this.renderHistory();
+            } catch (e) {}
+        }
+
+        renderHistory() {
+            const container = document.getElementById('history-container');
+            try {
+                const records = JSON.parse(localStorage.getItem(this.STORAGE_KEY_HISTORY) || '[]');
+                if (!records.length) {
+                    container.innerHTML = `<p class="text-xs text-slate-500 italic">No past exam attempts recorded yet.</p>`;
+                    return;
+                }
+                container.innerHTML = records.map(r => `
+                    <div class="flex items-center justify-between p-3 rounded-xl bg-slate-900/60 border border-slate-800 text-xs">
+                        <div class="space-y-0.5">
+                            <p class="font-bold text-slate-200">${this.escapeHTML(r.title)}</p>
+                            <p class="text-[10px] text-slate-500">${r.date} • Mode: <span class="capitalize text-slate-400">${r.mode}</span></p>
+                        </div>
+                        <div class="text-right">
+                            <span class="font-bold text-sm ${r.passed ? 'text-emerald-400' : 'text-red-400'}">${r.score}%</span>
+                            <span class="block text-[10px] font-semibold ${r.passed ? 'text-emerald-500/80' : 'text-red-500/80'}">${r.passed ? 'PASSED' : 'FAILED'}</span>
+                        </div>
+                    </div>`).join('');
+            } catch (e) {
+                container.innerHTML = `<p class="text-xs text-slate-500 italic">No past exam attempts recorded yet.</p>`;
+            }
+        }
+
+        clearHistory() {
+            if (confirm("Clear all recorded exam history?")) {
+                localStorage.removeItem(this.STORAGE_KEY_HISTORY);
+                this.renderHistory();
+            }
+        }
+
+        // ---------- Session persistence ----------
+        saveActiveSession() {
+            try {
+                const state = {
+                    sessionQuestions: this.sessionQuestions,
+                    currentIndex: this.currentIndex,
+                    userAnswers: this.userAnswers,
+                    flaggedSet: Array.from(this.flaggedSet),
+                    mode: this.mode,
+                    timeRemainingSeconds: this.timeRemainingSeconds,
+                    totalExamSeconds: this.totalExamSeconds
+                };
+                localStorage.setItem(this.STORAGE_KEY_SAVED_SESSION, JSON.stringify(state));
+            } catch (e) {}
+        }
+
+        checkSavedSession() {
+            try {
+                const saved = localStorage.getItem(this.STORAGE_KEY_SAVED_SESSION);
+                if (!saved) return;
+                const parsed = JSON.parse(saved);
+                if (!parsed.sessionQuestions || !parsed.sessionQuestions.length) return;
+
+                if (confirm("Resume your previous unfinished exam session?")) {
+                    this.sessionQuestions = parsed.sessionQuestions;
+                    this.currentIndex = parsed.currentIndex || 0;
+                    this.userAnswers = parsed.userAnswers || {};
+                    this.flaggedSet = new Set(parsed.flaggedSet || []);
+                    this.mode = parsed.mode || 'test';
+                    this.timeRemainingSeconds = parsed.timeRemainingSeconds || 900;
+                    this.totalExamSeconds = parsed.totalExamSeconds || 900;
+
+                    if (this.mode === 'test') this.startTimer();
+                    this.showScreen('exam-screen');
+                    this.renderCurrentQuestion();
+                } else {
+                    this.clearActiveSessionStorage();
+                }
+            } catch (e) {}
+        }
+
+        clearActiveSessionStorage() {
+            localStorage.removeItem(this.STORAGE_KEY_SAVED_SESSION);
+        }
+
+        escapeHTML(str) {
+            if (str == null) return '';
+            return String(str).replace(/[&<>'"`/]/g, tag => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                "'": '&#39;',
+                '"': '&quot;',
+                '`': '&#96;',
+                '/': '&#47;'
+            }[tag]));
+        }
+    }
+
+    let app;
+    window.addEventListener('DOMContentLoaded', () => {
+        app = new VCESimulatorApp();
+    });
+</script>
+</body>
+</html>
