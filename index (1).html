@@ -217,6 +217,30 @@
                         </div>
                     </div>
 
+
+                    <!-- Number of Questions Selector -->
+<div>
+    <div class="flex justify-between items-center mb-1">
+        <label class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Questions to Answer</label>
+        <span id="question-count-label" class="text-xs font-mono font-bold text-brand-accent">All</span>
+    </div>
+
+    <!-- Quick-pick buttons -->
+    <div class="grid grid-cols-5 gap-1.5 mb-2">
+        <button type="button" data-qcount="25"  onclick="app.setQuestionCount(25)"  class="qcount-btn py-1.5 rounded-lg text-[11px] font-bold bg-slate-900/80 border border-slate-700/70 text-slate-400 hover:text-slate-200 transition">25</button>
+        <button type="button" data-qcount="50"  onclick="app.setQuestionCount(50)"  class="qcount-btn py-1.5 rounded-lg text-[11px] font-bold bg-slate-900/80 border border-slate-700/70 text-slate-400 hover:text-slate-200 transition">50</button>
+        <button type="button" data-qcount="100" onclick="app.setQuestionCount(100)" class="qcount-btn py-1.5 rounded-lg text-[11px] font-bold bg-slate-900/80 border border-slate-700/70 text-slate-400 hover:text-slate-200 transition">100</button>
+        <button type="button" data-qcount="200" onclick="app.setQuestionCount(200)" class="qcount-btn py-1.5 rounded-lg text-[11px] font-bold bg-slate-900/80 border border-slate-700/70 text-slate-400 hover:text-slate-200 transition">200</button>
+        <button type="button" data-qcount="0"   onclick="app.setQuestionCount(0)"   class="qcount-btn py-1.5 rounded-lg text-[11px] font-bold bg-slate-900/80 border border-slate-700/70 text-slate-400 hover:text-slate-200 transition">All</button>
+    </div>
+
+    <!-- Optional: fine-tune with a slider -->
+    <input type="range" id="question-count-range" min="5" max="650" step="5" value="0"
+           oninput="app.setQuestionCount(parseInt(this.value, 10))"
+           class="w-full accent-brand-500 bg-slate-700 h-1.5 rounded-lg appearance-none cursor-pointer">
+</div>
+
+                    
                     <!-- Start Button -->
                     <button onclick="app.startExam()" class="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-500 hover:to-brand-400 text-white font-bold text-sm tracking-wide shadow-lg shadow-brand-500/25 flex items-center justify-center space-x-2 transition active:scale-[0.99]">
                         <i class="fa-solid fa-play"></i>
@@ -599,6 +623,8 @@
             this.shuffleQuestions = true;
             this.shuffleChoices = true;
 
+        this.questionCount = 0;   // 0 = All
+
             this.sessionQuestions = [];
             this.currentIndex = 0;
             this.userAnswers = {};
@@ -613,6 +639,7 @@
             this.STORAGE_KEY_SAVED_SESSION = 'vce_active_session_v1';
 
             this.init();
+            this.setQuestionCount(0);
         }
 
         init() {
@@ -835,6 +862,7 @@
 
             this.activeQuestions = questions;
             this.datasetTitle = sourceTitle;
+            this.setQuestionCount(0);
             this.updateQuestionSetUI();
 
             if (dropped > 0) {
@@ -847,37 +875,88 @@
         }
 
         // ---------- Exam execution ----------
-        startExam(questionsToUse = null) {
-            const rawQuestions = questionsToUse || this.activeQuestions;
 
-            this.shuffleQuestions = document.getElementById('chk-shuffle-q').checked;
-            this.shuffleChoices = document.getElementById('chk-shuffle-c').checked;
 
-            let prepared = JSON.parse(JSON.stringify(rawQuestions));
-            if (this.shuffleQuestions) prepared = this.arrayShuffle(prepared);
-            if (this.shuffleChoices) {
-                prepared.forEach(q => { q.choices = this.arrayShuffle(q.choices); });
-            }
+        /* ---------- Question Count Selection ---------- */
+setQuestionCount(count) {
+    // 0 or larger-than-pool means "All"
+    this.questionCount = (count > 0) ? count : 0;
 
-            this.sessionQuestions = prepared;
-            this.currentIndex = 0;
-            this.userAnswers = {};
-            this.flaggedSet.clear();
-            this.checkedQuestions.clear();
+    // Update label
+    const label = document.getElementById('question-count-label');
+    label.innerText = this.questionCount > 0
+        ? `${this.questionCount} of ${this.activeQuestions.length}`
+        : 'All';
 
-            if (this.mode === 'test') {
-                this.totalExamSeconds = this.timerMinutes * 60;
-                this.timeRemainingSeconds = this.totalExamSeconds;
-                this.startTimer();
-            } else {
-                document.getElementById('nav-timer').classList.add('hidden');
-            }
-
-            this.showScreen('exam-screen');
-            this.renderCurrentQuestion();
-            this.saveActiveSession();
+    // Highlight the active quick-pick button
+    document.querySelectorAll('.qcount-btn').forEach(btn => {
+        const val = parseInt(btn.getAttribute('data-qcount'), 10);
+        const isActive = (val === this.questionCount) ||
+                         (val === 0 && this.questionCount === 0) ||
+                         (val > 0 && this.questionCount > 0 && Math.abs(val - this.questionCount) < 1);
+        if (isActive) {
+            btn.classList.add('bg-brand-600', 'text-white', 'border-brand-500');
+            btn.classList.remove('bg-slate-900/80', 'text-slate-400');
+        } else {
+            btn.classList.remove('bg-brand-600', 'text-white', 'border-brand-500');
+            btn.classList.add('bg-slate-900/80', 'text-slate-400');
         }
+    });
 
+    // Sync the slider
+    const slider = document.getElementById('question-count-range');
+    if (slider) {
+        slider.max = Math.max(5, this.activeQuestions.length);
+        slider.value = this.questionCount > 0 ? this.questionCount : this.activeQuestions.length;
+    }
+}
+
+
+        
+        startExam(questionsToUse = null) {
+    const rawQuestions = questionsToUse || this.activeQuestions;
+
+    this.shuffleQuestions = document.getElementById('chk-shuffle-q').checked;
+    this.shuffleChoices  = document.getElementById('chk-shuffle-c').checked;
+
+    // Deep clone
+    let prepared = JSON.parse(JSON.stringify(rawQuestions));
+
+    // Shuffle question order first
+    if (this.shuffleQuestions) {
+        prepared = this.arrayShuffle(prepared);
+    }
+
+    // 🎯 Apply the "how many questions?" limit
+    const requestedCount = (typeof this.questionCount === 'number') ? this.questionCount : 0;
+    if (requestedCount > 0 && requestedCount < prepared.length) {
+        prepared = prepared.slice(0, requestedCount);
+    }
+
+    // Shuffle choices within each selected question
+    if (this.shuffleChoices) {
+        prepared.forEach(q => { q.choices = this.arrayShuffle(q.choices); });
+    }
+
+    this.sessionQuestions = prepared;
+    this.currentIndex = 0;
+    this.userAnswers = {};
+    this.flaggedSet.clear();
+    this.checkedQuestions.clear();
+
+    // Timer
+    if (this.mode === 'test') {
+        this.totalExamSeconds = this.timerMinutes * 60;
+        this.timeRemainingSeconds = this.totalExamSeconds;
+        this.startTimer();
+    } else {
+        document.getElementById('nav-timer').classList.add('hidden');
+    }
+
+    this.showScreen('exam-screen');
+    this.renderCurrentQuestion();
+    this.saveActiveSession();
+}
         arrayShuffle(arr) {
             const a = [...arr];
             for (let i = a.length - 1; i > 0; i--) {
@@ -1279,20 +1358,21 @@
         }
 
         retakeMissed() {
-            // Submit the exam and reload only missed ones; if not on results screen,
-            // we can't know missed, so re-run from active set.
-            const missed = this.sessionQuestions.filter(q => {
-                const sel = (this.userAnswers[q.id] || []).sort();
-                const cor = [...q.correctAnswers].sort();
-                return JSON.stringify(sel) !== JSON.stringify(cor);
-            });
-            if (missed.length === 0) {
-                alert("No missed questions to retake. Starting a full retake instead.");
-                this.startExam();
-            } else {
-                this.startExam(missed);
-            }
-        }
+    const missed = this.sessionQuestions.filter(q => {
+        const sel = (this.userAnswers[q.id] || []).sort();
+        const cor = [...q.correctAnswers].sort();
+        return JSON.stringify(sel) !== JSON.stringify(cor);
+    });
+    if (missed.length === 0) {
+        alert("No missed questions to retake. Starting a full retake instead.");
+        this.startExam();
+    } else {
+        const saved = this.questionCount;
+        this.questionCount = 0;      // full missed set
+        this.startExam(missed);
+        this.questionCount = saved;  // restore
+    }
+}
 
         // ---------- History ----------
         saveHistoryRecord(record) {
