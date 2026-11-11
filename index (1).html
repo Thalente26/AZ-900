@@ -602,883 +602,896 @@
         ];
 
 
-    /**
-     * AZ-900 Built-in Sample Questions Data
-     */
-    //const SAMPLE_AZ900_QUESTIONS = [
-        // ... keep your existing 10 sample questions here, unchanged ...
-        // (I won't re-paste them; copy from your current file)
-    //];
+/**
+ * VCE Exam Simulator Core Application Object
+ */
+class VCESimulatorApp {
+    constructor() {
+        this.activeQuestions = [...SAMPLE_AZ900_QUESTIONS];
+        this.datasetTitle = "AZ-900: Microsoft Azure Fundamentals (Preloaded Demo)";
 
-    /**
-     * VCE Exam Simulator Core Application Object
-     */
-    class VCESimulatorApp {
-        constructor() {
-            this.activeQuestions = [...SAMPLE_AZ900_QUESTIONS];
-            this.datasetTitle = "AZ-900: Microsoft Azure Fundamentals (Preloaded Demo)";
+        this.mode = 'test';
+        this.timerMinutes = 15;
+        this.shuffleQuestions = true;
+        this.shuffleChoices = true;
 
-            this.mode = 'test';
-            this.timerMinutes = 15;
-            this.shuffleQuestions = true;
-            this.shuffleChoices = true;
+        this.questionCount = 0;          // 0 = All
+        this.questionCursor = 0;         // how many questions already consumed from the pool
+        this._shuffledPool = null;       // stable shuffled pool for cursor advancement
+        this._poolShuffled = false;
 
-        this.questionCount = 0;   // 0 = All
+        // Restore cursor from localStorage (survives reloads / new sessions)
+        const savedCursor = localStorage.getItem('vce_question_cursor');
+        if (savedCursor !== null) this.questionCursor = parseInt(savedCursor, 10) || 0;
 
-            this.sessionQuestions = [];
-            this.currentIndex = 0;
-            this.userAnswers = {};
-            this.flaggedSet = new Set();
-            this.checkedQuestions = new Set();
+        this.sessionQuestions = [];
+        this.currentIndex = 0;
+        this.userAnswers = {};
+        this.flaggedSet = new Set();
+        this.checkedQuestions = new Set();
 
-            this.timerInterval = null;
-            this.timeRemainingSeconds = 0;
-            this.totalExamSeconds = 0;
+        this.timerInterval = null;
+        this.timeRemainingSeconds = 0;
+        this.totalExamSeconds = 0;
 
-            this.STORAGE_KEY_HISTORY = 'vce_exam_history_v1';
-            this.STORAGE_KEY_SAVED_SESSION = 'vce_active_session_v1';
+        this.STORAGE_KEY_HISTORY = 'vce_exam_history_v1';
+        this.STORAGE_KEY_SAVED_SESSION = 'vce_active_session_v1';
 
-            this.init();
-            this.setQuestionCount(0);
+        this.init();
+    }
+
+    init() {
+        this.renderHistory();
+        this.checkSavedSession();
+        this.setQuestionCount(0);
+        this.updateCursorUI();
+    }
+
+    // ---------- UI navigation ----------
+    showScreen(screenId) {
+        ['welcome-screen', 'exam-screen', 'results-screen'].forEach(id =>
+            document.getElementById(id).classList.add('hidden')
+        );
+        document.getElementById(screenId).classList.remove('hidden');
+
+        const navControls = document.getElementById('nav-exam-controls');
+        navControls.classList.toggle('hidden', screenId !== 'exam-screen');
+
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    openModal(id) { document.getElementById(id).classList.remove('hidden'); }
+    closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+
+    toggleFullscreen() {
+        if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen?.().catch(() => {});
+        } else {
+            document.exitFullscreen?.().catch(() => {});
         }
+    }
 
-        init() {
-            this.renderHistory();
-            this.checkSavedSession();
+    // ---------- Configuration ----------
+    setMode(mode) {
+        this.mode = mode;
+        const btnTest = document.getElementById('btn-mode-test');
+        const btnPractice = document.getElementById('btn-mode-practice');
+        const timerContainer = document.getElementById('timer-setting-container');
+
+        if (mode === 'test') {
+            btnTest.className = "py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center space-x-1.5 bg-brand-600 text-white shadow-md";
+            btnPractice.className = "py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center space-x-1.5 text-slate-400 hover:text-slate-200";
+            timerContainer.classList.remove('opacity-40', 'pointer-events-none');
+        } else {
+            btnPractice.className = "py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center space-x-1.5 bg-brand-600 text-white shadow-md";
+            btnTest.className = "py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center space-x-1.5 text-slate-400 hover:text-slate-200";
+            timerContainer.classList.add('opacity-40', 'pointer-events-none');
         }
+    }
 
-        // ---------- UI navigation ----------
-        showScreen(screenId) {
-            ['welcome-screen', 'exam-screen', 'results-screen'].forEach(id =>
-                document.getElementById(id).classList.add('hidden')
-            );
-            document.getElementById(screenId).classList.remove('hidden');
+    updateTimerLabel(val) {
+        this.timerMinutes = parseInt(val, 10);
+        document.getElementById('timer-val-label').innerText = `${val} Mins`;
+    }
 
-            const navControls = document.getElementById('nav-exam-controls');
-            navControls.classList.toggle('hidden', screenId !== 'exam-screen');
+    loadAZ900Demo() {
+        this.activeQuestions = [...SAMPLE_AZ900_QUESTIONS];
+        this.datasetTitle = "AZ-900: Microsoft Azure Fundamentals (Preloaded Demo)";
+        this._resetCursor();
+        this.updateQuestionSetUI();
+    }
 
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-        }
+    updateQuestionSetUI() {
+        document.getElementById('exam-set-title').innerText = this.datasetTitle;
+        document.getElementById('exam-set-count').innerHTML =
+            `<i class="fa-solid fa-list-ol mr-1"></i> ${this.activeQuestions.length} Questions Loaded`;
+    }
 
-        openModal(id) { document.getElementById(id).classList.remove('hidden'); }
-        closeModal(id) { document.getElementById(id).classList.add('hidden'); }
-
-        toggleFullscreen() {
-            if (!document.fullscreenElement) {
-                document.documentElement.requestFullscreen?.().catch(() => {});
-            } else {
-                document.exitFullscreen?.().catch(() => {});
-            }
-        }
-
-        // ---------- Configuration ----------
-        setMode(mode) {
-            this.mode = mode;
-            const btnTest = document.getElementById('btn-mode-test');
-            const btnPractice = document.getElementById('btn-mode-practice');
-            const timerContainer = document.getElementById('timer-setting-container');
-
-            if (mode === 'test') {
-                btnTest.className = "py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center space-x-1.5 bg-brand-600 text-white shadow-md";
-                btnPractice.className = "py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center space-x-1.5 text-slate-400 hover:text-slate-200";
-                timerContainer.classList.remove('opacity-40', 'pointer-events-none');
-            } else {
-                btnPractice.className = "py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center space-x-1.5 bg-brand-600 text-white shadow-md";
-                btnTest.className = "py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center space-x-1.5 text-slate-400 hover:text-slate-200";
-                timerContainer.classList.add('opacity-40', 'pointer-events-none');
-            }
-        }
-
-        updateTimerLabel(val) {
-            this.timerMinutes = parseInt(val, 10);
-            document.getElementById('timer-val-label').innerText = `${val} Mins`;
-        }
-
-        loadAZ900Demo() {
-            this.activeQuestions = [...SAMPLE_AZ900_QUESTIONS];
-            this.datasetTitle = "AZ-900: Microsoft Azure Fundamentals (Preloaded Demo)";
-            this.updateQuestionSetUI();
-        }
-
-        updateQuestionSetUI() {
-            document.getElementById('exam-set-title').innerText = this.datasetTitle;
-            document.getElementById('exam-set-count').innerHTML =
-                `<i class="fa-solid fa-list-ol mr-1"></i> ${this.activeQuestions.length} Questions Loaded`;
-        }
-
-        // ---------- File upload / paste ----------
-        handleFileUpload(event) {
-            const file = event.target.files[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                try {
-                    const json = JSON.parse(e.target.result);
-                    this.validateAndSetQuestions(json, file.name);
-                } catch (err) {
-                    alert("Invalid JSON file format. Please check the structure.\n\n" + err.message);
-                }
-            };
-            reader.readAsText(file);
-        }
-
-        processPastedJSON() {
-            const text = document.getElementById('json-textarea').value.trim();
-            if (!text) return;
+    // ---------- File upload / paste ----------
+    handleFileUpload(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
             try {
-                const json = JSON.parse(text);
-                this.validateAndSetQuestions(json, "Custom Pasted JSON Exam");
-                this.closeModal('paste-modal');
+                const json = JSON.parse(e.target.result);
+                this.validateAndSetQuestions(json, file.name);
             } catch (err) {
-                alert("Failed to parse JSON. Make sure syntax is valid.\n\n" + err.message);
+                alert("Invalid JSON file format. Please check the structure.\n\n" + err.message);
             }
+        };
+        reader.readAsText(file);
+    }
+
+    processPastedJSON() {
+        const text = document.getElementById('json-textarea').value.trim();
+        if (!text) return;
+        try {
+            const json = JSON.parse(text);
+            this.validateAndSetQuestions(json, "Custom Pasted JSON Exam");
+            this.closeModal('paste-modal');
+        } catch (err) {
+            alert("Failed to parse JSON. Make sure syntax is valid.\n\n" + err.message);
         }
+    }
 
-        /**
-         * Accepts many common VCE/community JSON shapes.
-         * Returns { questions, dropped, dropReasons }
-         */
-        normalizeQuestions(raw) {
-            if (!Array.isArray(raw)) {
-                return { questions: [], dropped: 0, dropReasons: ['Top-level JSON is not an array.'] };
+    normalizeQuestions(raw) {
+        if (!Array.isArray(raw)) {
+            return { questions: [], dropped: 0, dropReasons: ['Top-level JSON is not an array.'] };
+        }
+        const questions = [];
+        const dropReasons = [];
+
+        raw.forEach((q, idx) => {
+            if (!q || typeof q !== 'object') {
+                dropReasons.push(`Item #${idx + 1}: not an object.`);
+                return;
             }
-
-            const questions = [];
-            const dropReasons = [];
-
-            raw.forEach((q, idx) => {
-                if (!q || typeof q !== 'object') {
-                    dropReasons.push(`Item #${idx + 1}: not an object.`);
-                    return;
-                }
-
-                const questionText = String(
-                    q.question || q.q || q.text || q.stem || ''
-                ).trim();
-                if (!questionText) {
-                    dropReasons.push(`Item #${idx + 1}: missing question text.`);
-                    return;
-                }
-
-                // --- normalize choices ---
-                const rawChoices = q.choices || q.options || q.answers || [];
-                if (!Array.isArray(rawChoices) || rawChoices.length === 0) {
-                    dropReasons.push(`Item #${idx + 1}: no choices array.`);
-                    return;
-                }
-
-                const choices = rawChoices.map((c, i) => {
-                    const fallbackId = String.fromCharCode(65 + i); // A, B, C...
-                    if (typeof c === 'string') {
-                        return { id: fallbackId, text: c };
-                    }
-                    return {
-                        id: String(c.id || c.key || c.letter || fallbackId),
-                        text: String(c.text || c.value || c.label || c.choice || '')
-                    };
-                });
-
-                // --- normalize answer key ---
-                let answerRaw =
-                    q.correctAnswers || q.correct || q.answer || q.answers || q.key || [];
-                if (typeof answerRaw === 'string') {
-                    // "A" -> ["A"]  |  "A,B" -> ["A","B"]  |  "A B" -> ["A","B"]
-                    answerRaw = answerRaw
-                        .split(/[\s,;|]+/)
-                        .map(s => s.trim())
-                        .filter(Boolean);
-                } else if (Array.isArray(answerRaw)) {
-                    // Handle things like [true, false, true] -> indices mapped to ids
-                    if (answerRaw.every(a => typeof a === 'boolean')) {
-                        answerRaw = answerRaw
-                            .map((v, i) => v ? String.fromCharCode(65 + i) : null)
-                            .filter(Boolean);
-                    }
-                } else {
-                    answerRaw = [];
-                }
-
-                // If answers are full choice *texts* rather than ids, map them back
-                const choiceIds = new Set(choices.map(c => c.id));
-                const choiceByText = new Map(
-                    choices.map(c => [c.text.toLowerCase().trim(), c.id])
-                );
-
-                let answerIds = answerRaw
-                    .map(a => {
-                        if (typeof a !== 'string') return null;
-                        const s = a.trim();
-                        if (choiceIds.has(s)) return s;
-                        // Match by text
-                        const byText = choiceByText.get(s.toLowerCase());
-                        if (byText) return byText;
-                        // Match by letter even if casing differs
-                        const upper = s.toUpperCase();
-                        if (choiceIds.has(upper)) return upper;
-                        return null;
-                    })
-                    .filter(Boolean);
-
-                // If still empty and there's a correctAnswerIndex
-                if (answerIds.length === 0 && Number.isInteger(q.correctAnswerIndex)) {
-                    const c = choices[q.correctAnswerIndex];
-                    if (c) answerIds = [c.id];
-                }
-                // If still empty and a single correctChoice / correctIndex pair
-                if (answerIds.length === 0 && Number.isInteger(q.answerIndex)) {
-                    const c = choices[q.answerIndex];
-                    if (c) answerIds = [c.id];
-                }
-
-                if (answerIds.length === 0) {
-                    dropReasons.push(`Item #${idx + 1}: could not determine correct answer.`);
-                    return;
-                }
-
-                questions.push({
-                    id: q.id != null ? String(q.id) : `q-${idx + 1}`,
-                    question: questionText,
-                    choices,
-                    correctAnswers: answerIds,
-                    explanation: String(q.explanation || q.reason || q.rationale || "No explanation provided."),
-                    isMulti: answerIds.length > 1 || q.type === 'multi' || q.multiSelect === true
-                });
+            const questionText = String(q.question || q.q || q.text || q.stem || '').trim();
+            if (!questionText) {
+                dropReasons.push(`Item #${idx + 1}: missing question text.`);
+                return;
+            }
+            const rawChoices = q.choices || q.options || q.answers || [];
+            if (!Array.isArray(rawChoices) || rawChoices.length === 0) {
+                dropReasons.push(`Item #${idx + 1}: no choices array.`);
+                return;
+            }
+            const choices = rawChoices.map((c, i) => {
+                const fallbackId = String.fromCharCode(65 + i);
+                if (typeof c === 'string') return { id: fallbackId, text: c };
+                return {
+                    id: String(c.id || c.key || c.letter || fallbackId),
+                    text: String(c.text || c.value || c.label || c.choice || '')
+                };
             });
 
-            return { questions, dropped: raw.length - questions.length, dropReasons };
-        }
+            let answerRaw = q.correctAnswers || q.correct || q.answer || q.answers || q.key || [];
+            if (typeof answerRaw === 'string') {
+                answerRaw = answerRaw.split(/[\s,;|]+/).map(s => s.trim()).filter(Boolean);
+            } else if (Array.isArray(answerRaw) && answerRaw.every(a => typeof a === 'boolean')) {
+                answerRaw = answerRaw.map((v, i) => v ? String.fromCharCode(65 + i) : null).filter(Boolean);
+            } else if (!Array.isArray(answerRaw)) {
+                answerRaw = [];
+            }
 
-        validateAndSetQuestions(data, sourceTitle) {
-            const { questions, dropped, dropReasons } = this.normalizeQuestions(data);
+            const choiceIds = new Set(choices.map(c => c.id));
+            const choiceByText = new Map(choices.map(c => [c.text.toLowerCase().trim(), c.id]));
 
-            if (questions.length === 0) {
-                alert(
-                    `No usable questions were found.\n\n` +
-                    `Dropped items: ${dropped}\n\n` +
-                    dropReasons.slice(0, 5).join('\n')
-                );
+            let answerIds = answerRaw.map(a => {
+                if (typeof a !== 'string') return null;
+                const s = a.trim();
+                if (choiceIds.has(s)) return s;
+                const byText = choiceByText.get(s.toLowerCase());
+                if (byText) return byText;
+                const upper = s.toUpperCase();
+                if (choiceIds.has(upper)) return upper;
+                return null;
+            }).filter(Boolean);
+
+            if (answerIds.length === 0 && Number.isInteger(q.correctAnswerIndex)) {
+                const c = choices[q.correctAnswerIndex];
+                if (c) answerIds = [c.id];
+            }
+            if (answerIds.length === 0 && Number.isInteger(q.answerIndex)) {
+                const c = choices[q.answerIndex];
+                if (c) answerIds = [c.id];
+            }
+            if (answerIds.length === 0) {
+                dropReasons.push(`Item #${idx + 1}: could not determine correct answer.`);
                 return;
             }
 
-            this.activeQuestions = questions;
-            this.datasetTitle = sourceTitle;
-            this.setQuestionCount(0);
-            this.updateQuestionSetUI();
-
-            if (dropped > 0) {
-                alert(
-                    `Loaded ${questions.length} question(s).\n\n` +
-                    `Skipped ${dropped} malformed item(s).\n\n` +
-                    dropReasons.slice(0, 5).join('\n')
-                );
-            }
-        }
-
-        // ---------- Exam execution ----------
-
-
-        /* ---------- Question Count Selection ---------- */
-setQuestionCount(count) {
-    // 0 or larger-than-pool means "All"
-    this.questionCount = (count > 0) ? count : 0;
-
-    // Update label
-    const label = document.getElementById('question-count-label');
-    label.innerText = this.questionCount > 0
-        ? `${this.questionCount} of ${this.activeQuestions.length}`
-        : 'All';
-
-    // Highlight the active quick-pick button
-    document.querySelectorAll('.qcount-btn').forEach(btn => {
-        const val = parseInt(btn.getAttribute('data-qcount'), 10);
-        const isActive = (val === this.questionCount) ||
-                         (val === 0 && this.questionCount === 0) ||
-                         (val > 0 && this.questionCount > 0 && Math.abs(val - this.questionCount) < 1);
-        if (isActive) {
-            btn.classList.add('bg-brand-600', 'text-white', 'border-brand-500');
-            btn.classList.remove('bg-slate-900/80', 'text-slate-400');
-        } else {
-            btn.classList.remove('bg-brand-600', 'text-white', 'border-brand-500');
-            btn.classList.add('bg-slate-900/80', 'text-slate-400');
-        }
-    });
-
-    // Sync the slider
-    const slider = document.getElementById('question-count-range');
-    if (slider) {
-        slider.max = Math.max(5, this.activeQuestions.length);
-        slider.value = this.questionCount > 0 ? this.questionCount : this.activeQuestions.length;
-    }
-}
-
-
-        
-        startExam(questionsToUse = null) {
-    const rawQuestions = questionsToUse || this.activeQuestions;
-
-    this.shuffleQuestions = document.getElementById('chk-shuffle-q').checked;
-    this.shuffleChoices  = document.getElementById('chk-shuffle-c').checked;
-
-    // Deep clone
-    let prepared = JSON.parse(JSON.stringify(rawQuestions));
-
-    // Shuffle question order first
-    if (this.shuffleQuestions) {
-        prepared = this.arrayShuffle(prepared);
-    }
-
-    // 🎯 Apply the "how many questions?" limit
-    const requestedCount = (typeof this.questionCount === 'number') ? this.questionCount : 0;
-    if (requestedCount > 0 && requestedCount < prepared.length) {
-        prepared = prepared.slice(0, requestedCount);
-    }
-
-    // Shuffle choices within each selected question
-    if (this.shuffleChoices) {
-        prepared.forEach(q => { q.choices = this.arrayShuffle(q.choices); });
-    }
-
-    this.sessionQuestions = prepared;
-    this.currentIndex = 0;
-    this.userAnswers = {};
-    this.flaggedSet.clear();
-    this.checkedQuestions.clear();
-
-    // Timer
-    if (this.mode === 'test') {
-        this.totalExamSeconds = this.timerMinutes * 60;
-        this.timeRemainingSeconds = this.totalExamSeconds;
-        this.startTimer();
-    } else {
-        document.getElementById('nav-timer').classList.add('hidden');
-    }
-
-    this.showScreen('exam-screen');
-    this.renderCurrentQuestion();
-    this.saveActiveSession();
-}
-        arrayShuffle(arr) {
-            const a = [...arr];
-            for (let i = a.length - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
-                [a[i], a[j]] = [a[j], a[i]];
-            }
-            return a;
-        }
-
-        startTimer() {
-            const timerNav = document.getElementById('nav-timer');
-            const timerText = document.getElementById('timer-text');
-            timerNav.classList.remove('hidden');
-
-            if (this.timerInterval) clearInterval(this.timerInterval);
-
-            const tick = () => {
-                const mins = Math.floor(this.timeRemainingSeconds / 60);
-                const secs = this.timeRemainingSeconds % 60;
-                timerText.innerText = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-
-                timerNav.classList.toggle('text-red-400', this.timeRemainingSeconds <= 60);
-                timerNav.classList.toggle('border-red-500/40', this.timeRemainingSeconds <= 60);
-                timerNav.classList.toggle('pulse-subtle', this.timeRemainingSeconds <= 60);
-
-                if (this.timeRemainingSeconds <= 0) {
-                    clearInterval(this.timerInterval);
-                    alert("Time is up! Your exam will now be submitted.");
-                    this.submitExam();
-                }
-                this.timeRemainingSeconds--;
-            };
-
-            tick();
-            this.timerInterval = setInterval(tick, 1000);
-        }
-
-        stopTimer() {
-            if (this.timerInterval) {
-                clearInterval(this.timerInterval);
-                this.timerInterval = null;
-            }
-        }
-
-        /** Convert \n to <br> and escape HTML. */
-        formatText(text) {
-            return this.escapeHTML(String(text || '')).replace(/\n/g, '<br>');
-        }
-
-        renderCurrentQuestion() {
-            const q = this.sessionQuestions[this.currentIndex];
-            const total = this.sessionQuestions.length;
-
-            document.getElementById('exam-progress-text').innerText = `Question ${this.currentIndex + 1} of ${total}`;
-            document.getElementById('exam-progress-bar').style.width =
-                `${((this.currentIndex + 1) / total) * 100}%`;
-
-            const isMulti = (q.correctAnswers && q.correctAnswers.length > 1) || q.isMulti === true;
-            const badge = document.getElementById('question-type-badge');
-            badge.innerText = isMulti ? 'Multi-Select' : 'Single Choice';
-            badge.className = isMulti
-                ? "px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 text-[11px] font-medium border border-purple-500/30"
-                : "px-2 py-0.5 rounded bg-brand-500/20 text-brand-accent text-[11px] font-medium border border-brand-500/30";
-
-            this.updateFlagUI();
-
-            document.getElementById('question-text').innerHTML = this.formatText(q.question);
-
-            const choicesContainer = document.getElementById('choices-container');
-            choicesContainer.innerHTML = '';
-            const currentAnswers = this.userAnswers[q.id] || [];
-
-            q.choices.forEach(choice => {
-                const isSelected = currentAnswers.includes(choice.id);
-                const btn = document.createElement('button');
-                btn.type = 'button';
-                btn.className = `w-full text-left p-4 rounded-xl border transition flex items-start space-x-3.5 ${
-                    isSelected
-                        ? 'bg-brand-500/15 border-brand-500 text-white shadow-md'
-                        : 'bg-slate-900/60 border-slate-700/80 hover:border-slate-600 text-slate-200'
-                }`;
-
-                const icon = isMulti
-                    ? (isSelected ? '<i class="fa-solid fa-square-check text-brand-accent text-lg"></i>' : '<i class="fa-regular fa-square text-slate-500 text-lg"></i>')
-                    : (isSelected ? '<i class="fa-solid fa-circle-dot text-brand-accent text-lg"></i>' : '<i class="fa-regular fa-circle text-slate-500 text-lg"></i>');
-
-                btn.innerHTML = `
-                    <div class="mt-0.5 shrink-0">${icon}</div>
-                    <div class="flex-1 text-sm font-medium leading-normal">
-                        <span class="font-bold text-slate-400 mr-1.5">${this.escapeHTML(choice.id)}.</span>
-                        ${this.formatText(choice.text)}
-                    </div>
-                `;
-                btn.onclick = () => this.selectChoice(q.id, choice.id, isMulti);
-                choicesContainer.appendChild(btn);
+            questions.push({
+                id: q.id != null ? String(q.id) : `q-${idx + 1}`,
+                question: questionText,
+                choices,
+                correctAnswers: answerIds,
+                explanation: String(q.explanation || q.reason || q.rationale || "No explanation provided."),
+                isMulti: answerIds.length > 1 || q.type === 'multi' || q.multiSelect === true
             });
+        });
 
-            const btnCheck = document.getElementById('btn-check');
-            const feedbackBox = document.getElementById('practice-feedback-box');
+        return { questions, dropped: raw.length - questions.length, dropReasons };
+    }
 
-            if (this.mode === 'practice') {
-                btnCheck.classList.remove('hidden');
-                if (this.checkedQuestions.has(q.id)) {
-                    this.showPracticeFeedback(q);
-                } else {
-                    feedbackBox.classList.add('hidden');
-                }
+    validateAndSetQuestions(data, sourceTitle) {
+        const { questions, dropped, dropReasons } = this.normalizeQuestions(data);
+        if (questions.length === 0) {
+            alert(
+                `No usable questions were found.\n\n` +
+                `Dropped items: ${dropped}\n\n` +
+                dropReasons.slice(0, 5).join('\n')
+            );
+            return;
+        }
+        this.activeQuestions = questions;
+        this.datasetTitle = sourceTitle;
+        this._resetCursor();
+        this.setQuestionCount(0);
+        this.updateQuestionSetUI();
+
+        if (dropped > 0) {
+            alert(
+                `Loaded ${questions.length} question(s).\n\n` +
+                `Skipped ${dropped} malformed item(s).\n\n` +
+                dropReasons.slice(0, 5).join('\n')
+            );
+        }
+    }
+
+    // ---------- Question count UI ----------
+    setQuestionCount(count) {
+        this.questionCount = (count > 0) ? count : 0;
+
+        const label = document.getElementById('question-count-label');
+        if (label) {
+            label.innerText = this.questionCount > 0
+                ? `${this.questionCount} of ${this.activeQuestions.length}`
+                : 'All';
+        }
+
+        document.querySelectorAll('.qcount-btn').forEach(btn => {
+            const val = parseInt(btn.getAttribute('data-qcount'), 10);
+            const isActive = (val === this.questionCount) ||
+                             (val === 0 && this.questionCount === 0);
+            if (isActive) {
+                btn.classList.add('bg-brand-600', 'text-white', 'border-brand-500');
+                btn.classList.remove('bg-slate-900/80', 'text-slate-400');
             } else {
-                btnCheck.classList.add('hidden');
+                btn.classList.remove('bg-brand-600', 'text-white', 'border-brand-500');
+                btn.classList.add('bg-slate-900/80', 'text-slate-400');
+            }
+        });
+
+        const slider = document.getElementById('question-count-range');
+        if (slider) {
+            slider.max = Math.max(5, this.activeQuestions.length);
+            slider.value = this.questionCount > 0 ? this.questionCount : this.activeQuestions.length;
+        }
+    }
+
+    updateCursorUI() {
+        const label = document.getElementById('question-cursor-label');
+        if (!label) return;
+        const total = this.activeQuestions.length;
+        const remaining = Math.max(0, total - this.questionCursor);
+        if (this.questionCount === 0) {
+            label.innerText = `${total} questions in pool • "All" mode (no cursor)`;
+        } else {
+            const nextStart = this.questionCursor >= total ? 1 : this.questionCursor + 1;
+            label.innerText = `Next batch starts at Q${nextStart} • ${remaining} remaining`;
+        }
+    }
+
+    resetCursor() {
+        if (!confirm("Reset question progress? Next exam will start again from question 1 of a freshly shuffled pool.")) return;
+        this._resetCursor();
+        this.updateCursorUI();
+        alert("Progress reset. Next exam starts from Q1.");
+    }
+
+    _resetCursor() {
+        this.questionCursor = 0;
+        this._shuffledPool = null;
+        this._poolShuffled = false;
+        try { localStorage.setItem('vce_question_cursor', '0'); } catch (e) {}
+    }
+
+    // ---------- Exam execution ----------
+    startExam(questionsToUse = null) {
+        // Retake Missed / explicit subset: bypass cursor entirely
+        if (questionsToUse) {
+            this._launchSession(questionsToUse);
+            return;
+        }
+
+        this.shuffleQuestions = document.getElementById('chk-shuffle-q').checked;
+        this.shuffleChoices  = document.getElementById('chk-shuffle-c').checked;
+
+        // Build a stable shuffled pool once (order persists across sessions)
+        if (!this._poolShuffled || !this._shuffledPool) {
+            this._shuffledPool = this.arrayShuffle(JSON.parse(JSON.stringify(this.activeQuestions)));
+            this._poolShuffled = true;
+        }
+
+        const pool = this._shuffledPool;
+        const requested = (typeof this.questionCount === 'number') ? this.questionCount : 0;
+
+        // "All" — start over from the top
+        if (requested === 0 || requested >= pool.length) {
+            this.questionCursor = 0;
+            this._persistCursor();
+            this._launchSession(pool);
+            return;
+        }
+
+        const start = this.questionCursor;
+        const end   = start + requested;
+
+        // Rollover if not enough left in the pool
+        if (end > pool.length) {
+            const slice = pool.slice(start).concat(pool.slice(0, end - pool.length));
+            this.questionCursor = end - pool.length;
+            this._persistCursor();
+            this._launchSession(slice);
+            return;
+        }
+
+        const slice = pool.slice(start, end);
+        this.questionCursor = end;
+        if (this.questionCursor >= pool.length) this.questionCursor = 0;
+        this._persistCursor();
+        this._launchSession(slice);
+    }
+
+    _launchSession(questions) {
+        let prepared = JSON.parse(JSON.stringify(questions));
+
+        if (this.shuffleChoices) {
+            prepared.forEach(q => { q.choices = this.arrayShuffle(q.choices); });
+        }
+
+        this.sessionQuestions = prepared;
+        this.currentIndex = 0;
+        this.userAnswers = {};
+        this.flaggedSet.clear();
+        this.checkedQuestions.clear();
+
+        if (this.mode === 'test') {
+            this.totalExamSeconds = this.timerMinutes * 60;
+            this.timeRemainingSeconds = this.totalExamSeconds;
+            this.startTimer();
+        } else {
+            document.getElementById('nav-timer').classList.add('hidden');
+        }
+
+        this.showScreen('exam-screen');
+        this.renderCurrentQuestion();
+        this.saveActiveSession();
+        this.updateCursorUI();
+    }
+
+    _persistCursor() {
+        try { localStorage.setItem('vce_question_cursor', String(this.questionCursor)); } catch (e) {}
+    }
+
+    arrayShuffle(arr) {
+        const a = [...arr];
+        for (let i = a.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [a[i], a[j]] = [a[j], a[i]];
+        }
+        return a;
+    }
+
+    startTimer() {
+        const timerNav = document.getElementById('nav-timer');
+        const timerText = document.getElementById('timer-text');
+        timerNav.classList.remove('hidden');
+
+        if (this.timerInterval) clearInterval(this.timerInterval);
+
+        const tick = () => {
+            const mins = Math.floor(this.timeRemainingSeconds / 60);
+            const secs = this.timeRemainingSeconds % 60;
+            timerText.innerText = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+
+            timerNav.classList.toggle('text-red-400', this.timeRemainingSeconds <= 60);
+            timerNav.classList.toggle('border-red-500/40', this.timeRemainingSeconds <= 60);
+            timerNav.classList.toggle('pulse-subtle', this.timeRemainingSeconds <= 60);
+
+            if (this.timeRemainingSeconds <= 0) {
+                clearInterval(this.timerInterval);
+                alert("Time is up! Your exam will now be submitted.");
+                this.submitExam();
+            }
+            this.timeRemainingSeconds--;
+        };
+
+        tick();
+        this.timerInterval = setInterval(tick, 1000);
+    }
+
+    stopTimer() {
+        if (this.timerInterval) {
+            clearInterval(this.timerInterval);
+            this.timerInterval = null;
+        }
+    }
+
+    formatText(text) {
+        return this.escapeHTML(String(text || '')).replace(/\n/g, '<br>');
+    }
+
+    renderCurrentQuestion() {
+        const q = this.sessionQuestions[this.currentIndex];
+        const total = this.sessionQuestions.length;
+
+        document.getElementById('exam-progress-text').innerText = `Question ${this.currentIndex + 1} of ${total}`;
+        document.getElementById('exam-progress-bar').style.width =
+            `${((this.currentIndex + 1) / total) * 100}%`;
+
+        const isMulti = (q.correctAnswers && q.correctAnswers.length > 1) || q.isMulti === true;
+        const badge = document.getElementById('question-type-badge');
+        badge.innerText = isMulti ? 'Multi-Select' : 'Single Choice';
+        badge.className = isMulti
+            ? "px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 text-[11px] font-medium border border-purple-500/30"
+            : "px-2 py-0.5 rounded bg-brand-500/20 text-brand-accent text-[11px] font-medium border border-brand-500/30";
+
+        this.updateFlagUI();
+        document.getElementById('question-text').innerHTML = this.formatText(q.question);
+
+        const choicesContainer = document.getElementById('choices-container');
+        choicesContainer.innerHTML = '';
+        const currentAnswers = this.userAnswers[q.id] || [];
+
+        q.choices.forEach(choice => {
+            const isSelected = currentAnswers.includes(choice.id);
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = `w-full text-left p-4 rounded-xl border transition flex items-start space-x-3.5 ${
+                isSelected
+                    ? 'bg-brand-500/15 border-brand-500 text-white shadow-md'
+                    : 'bg-slate-900/60 border-slate-700/80 hover:border-slate-600 text-slate-200'
+            }`;
+
+            const icon = isMulti
+                ? (isSelected ? '<i class="fa-solid fa-square-check text-brand-accent text-lg"></i>' : '<i class="fa-regular fa-square text-slate-500 text-lg"></i>')
+                : (isSelected ? '<i class="fa-solid fa-circle-dot text-brand-accent text-lg"></i>' : '<i class="fa-regular fa-circle text-slate-500 text-lg"></i>');
+
+            btn.innerHTML = `
+                <div class="mt-0.5 shrink-0">${icon}</div>
+                <div class="flex-1 text-sm font-medium leading-normal">
+                    <span class="font-bold text-slate-400 mr-1.5">${this.escapeHTML(choice.id)}.</span>
+                    ${this.formatText(choice.text)}
+                </div>
+            `;
+            btn.onclick = () => this.selectChoice(q.id, choice.id, isMulti);
+            choicesContainer.appendChild(btn);
+        });
+
+        const btnCheck = document.getElementById('btn-check');
+        const feedbackBox = document.getElementById('practice-feedback-box');
+
+        if (this.mode === 'practice') {
+            btnCheck.classList.remove('hidden');
+            if (this.checkedQuestions.has(q.id)) {
+                this.showPracticeFeedback(q);
+            } else {
                 feedbackBox.classList.add('hidden');
             }
-
-            document.getElementById('btn-prev').disabled = this.currentIndex === 0;
-
-            const btnNext = document.getElementById('btn-next');
-            const btnSubmit = document.getElementById('btn-submit-exam');
-
-            if (this.currentIndex === total - 1) {
-                btnNext.classList.add('hidden');
-                btnSubmit.classList.remove('hidden');
-            } else {
-                btnNext.classList.remove('hidden');
-                btnSubmit.classList.add('hidden');
-            }
+        } else {
+            btnCheck.classList.add('hidden');
+            feedbackBox.classList.add('hidden');
         }
 
-        selectChoice(questionId, choiceId, isMulti) {
-            let current = this.userAnswers[questionId] ? [...this.userAnswers[questionId]] : [];
+        document.getElementById('btn-prev').disabled = this.currentIndex === 0;
 
-            if (isMulti) {
-                current = current.includes(choiceId)
-                    ? current.filter(id => id !== choiceId)
-                    : [...current, choiceId];
-            } else {
-                current = [choiceId];
-            }
+        const btnNext = document.getElementById('btn-next');
+        const btnSubmit = document.getElementById('btn-submit-exam');
 
-            this.userAnswers[questionId] = current;
-            this.saveActiveSession();
+        if (this.currentIndex === total - 1) {
+            btnNext.classList.add('hidden');
+            btnSubmit.classList.remove('hidden');
+        } else {
+            btnNext.classList.remove('hidden');
+            btnSubmit.classList.add('hidden');
+        }
+    }
+
+    selectChoice(questionId, choiceId, isMulti) {
+        let current = this.userAnswers[questionId] ? [...this.userAnswers[questionId]] : [];
+        if (isMulti) {
+            current = current.includes(choiceId)
+                ? current.filter(id => id !== choiceId)
+                : [...current, choiceId];
+        } else {
+            current = [choiceId];
+        }
+        this.userAnswers[questionId] = current;
+        this.saveActiveSession();
+        this.renderCurrentQuestion();
+    }
+
+    checkAnswerPractice() {
+        const q = this.sessionQuestions[this.currentIndex];
+        if (!(this.userAnswers[q.id] || []).length) {
+            alert("Please select an answer before checking.");
+            return;
+        }
+        this.checkedQuestions.add(q.id);
+        this.showPracticeFeedback(q);
+    }
+
+    showPracticeFeedback(question) {
+        const feedbackBox = document.getElementById('practice-feedback-box');
+        const statusEl = document.getElementById('feedback-status');
+        const expEl = document.getElementById('feedback-explanation');
+
+        const selected = (this.userAnswers[question.id] || []).sort();
+        const correct = [...question.correctAnswers].sort();
+        const isCorrect = JSON.stringify(selected) === JSON.stringify(correct);
+
+        feedbackBox.classList.remove(
+            'hidden', 'bg-emerald-500/10', 'border-emerald-500/30',
+            'bg-red-500/10', 'border-red-500/30'
+        );
+
+        if (isCorrect) {
+            feedbackBox.classList.add('bg-emerald-500/10', 'border-emerald-500/30');
+            statusEl.className = "flex items-center space-x-2 font-bold text-emerald-400";
+            statusEl.innerHTML = `<i class="fa-solid fa-circle-check text-base"></i><span>Correct Answer!</span>`;
+        } else {
+            feedbackBox.classList.add('bg-red-500/10', 'border-red-500/30');
+            statusEl.className = "flex items-center space-x-2 font-bold text-red-400";
+            statusEl.innerHTML = `<i class="fa-solid fa-circle-xmark text-base"></i><span>Incorrect. Correct answer is: ${correct.join(', ')}</span>`;
+        }
+
+        expEl.innerHTML = this.formatText(question.explanation);
+    }
+
+    toggleFlagCurrent() {
+        const q = this.sessionQuestions[this.currentIndex];
+        if (this.flaggedSet.has(q.id)) this.flaggedSet.delete(q.id);
+        else this.flaggedSet.add(q.id);
+        this.updateFlagUI();
+        this.saveActiveSession();
+    }
+
+    updateFlagUI() {
+        const q = this.sessionQuestions[this.currentIndex];
+        const isFlagged = this.flaggedSet.has(q.id);
+        const icon = document.getElementById('icon-flag');
+        const text = document.getElementById('text-flag');
+
+        icon.className = isFlagged
+            ? "fa-solid fa-bookmark text-amber-400 text-sm"
+            : "fa-regular fa-bookmark text-slate-400 text-sm";
+        text.className = isFlagged
+            ? "text-xs text-amber-400 font-bold"
+            : "text-xs text-slate-400 font-normal";
+
+        const badge = document.getElementById('badge-flagged-count');
+        badge.innerText = this.flaggedSet.size;
+        badge.classList.toggle('hidden', this.flaggedSet.size === 0);
+    }
+
+    nextQuestion() {
+        if (this.currentIndex < this.sessionQuestions.length - 1) {
+            this.currentIndex++;
             this.renderCurrentQuestion();
         }
+    }
 
-        checkAnswerPractice() {
-            const q = this.sessionQuestions[this.currentIndex];
-            if (!(this.userAnswers[q.id] || []).length) {
-                alert("Please select an answer before checking.");
-                return;
-            }
-            this.checkedQuestions.add(q.id);
-            this.showPracticeFeedback(q);
+    prevQuestion() {
+        if (this.currentIndex > 0) {
+            this.currentIndex--;
+            this.renderCurrentQuestion();
         }
+    }
 
-        showPracticeFeedback(question) {
-            const feedbackBox = document.getElementById('practice-feedback-box');
-            const statusEl = document.getElementById('feedback-status');
-            const expEl = document.getElementById('feedback-explanation');
+    toggleQuestionPalette() {
+        const grid = document.getElementById('palette-grid');
+        grid.innerHTML = '';
 
-            const selected = (this.userAnswers[question.id] || []).sort();
-            const correct = [...question.correctAnswers].sort();
-            const isCorrect = JSON.stringify(selected) === JSON.stringify(correct);
-
-            feedbackBox.classList.remove(
-                'hidden', 'bg-emerald-500/10', 'border-emerald-500/30',
-                'bg-red-500/10', 'border-red-500/30'
-            );
-
-            if (isCorrect) {
-                feedbackBox.classList.add('bg-emerald-500/10', 'border-emerald-500/30');
-                statusEl.className = "flex items-center space-x-2 font-bold text-emerald-400";
-                statusEl.innerHTML = `<i class="fa-solid fa-circle-check text-base"></i><span>Correct Answer!</span>`;
-            } else {
-                feedbackBox.classList.add('bg-red-500/10', 'border-red-500/30');
-                statusEl.className = "flex items-center space-x-2 font-bold text-red-400";
-                statusEl.innerHTML = `<i class="fa-solid fa-circle-xmark text-base"></i><span>Incorrect. Correct answer is: ${correct.join(', ')}</span>`;
-            }
-
-            expEl.innerHTML = this.formatText(question.explanation);
-        }
-
-        toggleFlagCurrent() {
-            const q = this.sessionQuestions[this.currentIndex];
-            if (this.flaggedSet.has(q.id)) this.flaggedSet.delete(q.id);
-            else this.flaggedSet.add(q.id);
-            this.updateFlagUI();
-            this.saveActiveSession();
-        }
-
-        updateFlagUI() {
-            const q = this.sessionQuestions[this.currentIndex];
+        this.sessionQuestions.forEach((q, idx) => {
+            const isCurrent = idx === this.currentIndex;
+            const isAnswered = (this.userAnswers[q.id] || []).length > 0;
             const isFlagged = this.flaggedSet.has(q.id);
 
-            const icon = document.getElementById('icon-flag');
-            const text = document.getElementById('text-flag');
+            let cls = "bg-slate-800 text-slate-300 border-slate-700";
+            if (isAnswered) cls = "bg-brand-600/30 border-brand-500 text-brand-accent";
+            if (isFlagged) cls = "bg-amber-500/20 border-amber-500 text-amber-400";
+            if (isCurrent) cls += " ring-2 ring-white font-black scale-105";
 
-            icon.className = isFlagged
-                ? "fa-solid fa-bookmark text-amber-400 text-sm"
-                : "fa-regular fa-bookmark text-slate-400 text-sm";
-            text.className = isFlagged
-                ? "text-xs text-amber-400 font-bold"
-                : "text-xs text-slate-400 font-normal";
-
-            const badge = document.getElementById('badge-flagged-count');
-            badge.innerText = this.flaggedSet.size;
-            badge.classList.toggle('hidden', this.flaggedSet.size === 0);
-        }
-
-        nextQuestion() {
-            if (this.currentIndex < this.sessionQuestions.length - 1) {
-                this.currentIndex++;
+            const btn = document.createElement('button');
+            btn.className = `h-10 rounded-xl border flex items-center justify-center font-semibold text-xs transition ${cls}`;
+            btn.innerText = idx + 1;
+            btn.onclick = () => {
+                this.currentIndex = idx;
                 this.renderCurrentQuestion();
-            }
-        }
+                this.closeModal('palette-modal');
+            };
+            grid.appendChild(btn);
+        });
 
-        prevQuestion() {
-            if (this.currentIndex > 0) {
-                this.currentIndex--;
-                this.renderCurrentQuestion();
-            }
-        }
+        this.openModal('palette-modal');
+    }
 
-        // ---------- Palette ----------
-        toggleQuestionPalette() {
-            const grid = document.getElementById('palette-grid');
-            grid.innerHTML = '';
-
-            this.sessionQuestions.forEach((q, idx) => {
-                const isCurrent = idx === this.currentIndex;
-                const isAnswered = (this.userAnswers[q.id] || []).length > 0;
-                const isFlagged = this.flaggedSet.has(q.id);
-
-                let cls = "bg-slate-800 text-slate-300 border-slate-700";
-                if (isAnswered) cls = "bg-brand-600/30 border-brand-500 text-brand-accent";
-                if (isFlagged) cls = "bg-amber-500/20 border-amber-500 text-amber-400";
-                if (isCurrent) cls += " ring-2 ring-white font-black scale-105";
-
-                const btn = document.createElement('button');
-                btn.className = `h-10 rounded-xl border flex items-center justify-center font-semibold text-xs transition ${cls}`;
-                btn.innerText = idx + 1;
-                btn.onclick = () => {
-                    this.currentIndex = idx;
-                    this.renderCurrentQuestion();
-                    this.closeModal('palette-modal');
-                };
-                grid.appendChild(btn);
-            });
-
-            this.openModal('palette-modal');
-        }
-
-        // ---------- Confirm ----------
-        confirmQuitExam() {
-            if (confirm("Are you sure you want to quit this exam? Your progress will be reset.")) {
-                this.stopTimer();
-                this.clearActiveSessionStorage();
-                this.showScreen('welcome-screen');
-            }
-        }
-
-        confirmSubmitExam() {
-            const unanswered = this.sessionQuestions.filter(
-                q => !(this.userAnswers[q.id] && this.userAnswers[q.id].length)
-            ).length;
-            const msg = unanswered
-                ? `You still have ${unanswered} unanswered question(s). Submit anyway?`
-                : "Are you ready to submit your exam?";
-            if (confirm(msg)) this.submitExam();
-        }
-
-        // ---------- Submit / Results ----------
-        submitExam() {
+    confirmQuitExam() {
+        if (confirm("Are you sure you want to quit this exam? Your progress will be reset.")) {
             this.stopTimer();
-
-            let correctCount = 0;
-            const missed = [];
-
-            this.sessionQuestions.forEach(q => {
-                const sel = (this.userAnswers[q.id] || []).sort();
-                const cor = [...q.correctAnswers].sort();
-                if (JSON.stringify(sel) === JSON.stringify(cor)) correctCount++;
-                else missed.push(q);
-            });
-
-            const total = this.sessionQuestions.length;
-            const percentage = Math.round((correctCount / total) * 100);
-            const isPassed = percentage >= 70;
-
-            const elapsed = this.totalExamSeconds - Math.max(0, this.timeRemainingSeconds);
-            const mins = Math.floor(elapsed / 60);
-            const secs = elapsed % 60;
-            const timeFormatted = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-
-            document.getElementById('score-percentage').innerText = `${percentage}%`;
-            document.getElementById('score-fraction').innerText = `${correctCount} of ${total} Correct`;
-            document.getElementById('result-metric-correct').innerText = correctCount;
-            document.getElementById('result-metric-wrong').innerText = total - correctCount;
-            document.getElementById('result-metric-time').innerText = timeFormatted;
-
-            const circle = document.getElementById('score-circle');
-            const title = document.getElementById('result-status-title');
-            const desc = document.getElementById('result-status-desc');
-            const glow = document.getElementById('result-glow');
-
-            circle.style.strokeDashoffset = 377 - (377 * percentage) / 100;
-
-            if (isPassed) {
-                circle.className.baseVal = "text-emerald-500 transition-all duration-1000 ease-out";
-                title.innerText = "EXAM PASSED";
-                title.className = "text-2xl font-black text-emerald-400 tracking-wide uppercase";
-                desc.innerText = `Congratulations! You scored ${percentage}%, meeting the 70% requirement.`;
-                glow.className = "absolute -top-24 -left-24 w-48 h-48 bg-emerald-500/20 rounded-full blur-3xl pointer-events-none";
-            } else {
-                circle.className.baseVal = "text-red-500 transition-all duration-1000 ease-out";
-                title.innerText = "EXAM FAILED";
-                title.className = "text-2xl font-black text-red-400 tracking-wide uppercase";
-                desc.innerText = `You scored ${percentage}%. You need 70% or higher to pass. Review missed items below.`;
-                glow.className = "absolute -top-24 -left-24 w-48 h-48 bg-red-500/20 rounded-full blur-3xl pointer-events-none";
-            }
-
-            const btnMissed = document.getElementById('btn-retake-missed');
-            if (missed.length === 0) {
-                btnMissed.classList.add('hidden');
-            } else {
-                btnMissed.classList.remove('hidden');
-                btnMissed.onclick = () => this.startExam(missed);
-            }
-
-            this.renderReviewList();
-
-            this.saveHistoryRecord({
-                date: new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                title: this.datasetTitle,
-                score: percentage,
-                passed: isPassed,
-                mode: this.mode
-            });
-
             this.clearActiveSessionStorage();
-            this.showScreen('results-screen');
+            this.showScreen('welcome-screen');
+        }
+    }
+
+    confirmSubmitExam() {
+        const unanswered = this.sessionQuestions.filter(
+            q => !(this.userAnswers[q.id] && this.userAnswers[q.id].length)
+        ).length;
+        const msg = unanswered
+            ? `You still have ${unanswered} unanswered question(s). Submit anyway?`
+            : "Are you ready to submit your exam?";
+        if (confirm(msg)) this.submitExam();
+    }
+
+    submitExam() {
+        this.stopTimer();
+
+        let correctCount = 0;
+        const missed = [];
+
+        this.sessionQuestions.forEach(q => {
+            const sel = (this.userAnswers[q.id] || []).sort();
+            const cor = [...q.correctAnswers].sort();
+            if (JSON.stringify(sel) === JSON.stringify(cor)) correctCount++;
+            else missed.push(q);
+        });
+
+        const total = this.sessionQuestions.length;
+        const percentage = Math.round((correctCount / total) * 100);
+        const isPassed = percentage >= 70;
+
+        const elapsed = this.totalExamSeconds - Math.max(0, this.timeRemainingSeconds);
+        const mins = Math.floor(elapsed / 60);
+        const secs = elapsed % 60;
+        const timeFormatted = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+
+        document.getElementById('score-percentage').innerText = `${percentage}%`;
+        document.getElementById('score-fraction').innerText = `${correctCount} of ${total} Correct`;
+        document.getElementById('result-metric-correct').innerText = correctCount;
+        document.getElementById('result-metric-wrong').innerText = total - correctCount;
+        document.getElementById('result-metric-time').innerText = timeFormatted;
+
+        const circle = document.getElementById('score-circle');
+        const title = document.getElementById('result-status-title');
+        const desc = document.getElementById('result-status-desc');
+        const glow = document.getElementById('result-glow');
+
+        circle.style.strokeDashoffset = 377 - (377 * percentage) / 100;
+
+        if (isPassed) {
+            circle.className.baseVal = "text-emerald-500 transition-all duration-1000 ease-out";
+            title.innerText = "EXAM PASSED";
+            title.className = "text-2xl font-black text-emerald-400 tracking-wide uppercase";
+            desc.innerText = `Congratulations! You scored ${percentage}%, meeting the 70% requirement.`;
+            glow.className = "absolute -top-24 -left-24 w-48 h-48 bg-emerald-500/20 rounded-full blur-3xl pointer-events-none";
+        } else {
+            circle.className.baseVal = "text-red-500 transition-all duration-1000 ease-out";
+            title.innerText = "EXAM FAILED";
+            title.className = "text-2xl font-black text-red-400 tracking-wide uppercase";
+            desc.innerText = `You scored ${percentage}%. You need 70% or higher to pass. Review missed items below.`;
+            glow.className = "absolute -top-24 -left-24 w-48 h-48 bg-red-500/20 rounded-full blur-3xl pointer-events-none";
         }
 
-        renderReviewList() {
-            const container = document.getElementById('review-list-container');
-            container.innerHTML = '';
+        const btnMissed = document.getElementById('btn-retake-missed');
+        if (missed.length === 0) {
+            btnMissed.classList.add('hidden');
+        } else {
+            btnMissed.classList.remove('hidden');
+            btnMissed.onclick = () => this.startExam(missed);
+        }
 
-            this.sessionQuestions.forEach((q, idx) => {
-                const sel = (this.userAnswers[q.id] || []).sort();
-                const cor = [...q.correctAnswers].sort();
-                const isCorrect = JSON.stringify(sel) === JSON.stringify(cor);
-                const isMulti = q.correctAnswers.length > 1 || q.isMulti === true;
+        this.renderReviewList();
 
-                const card = document.createElement('div');
-                card.className = `p-5 rounded-2xl border ${
-                    isCorrect ? 'bg-slate-800/40 border-slate-700/60' : 'bg-red-950/20 border-red-500/30'
-                } space-y-4`;
+        this.saveHistoryRecord({
+            date: new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            title: this.datasetTitle,
+            score: percentage,
+            passed: isPassed,
+            mode: this.mode
+        });
 
-                let choicesHTML = '';
-                q.choices.forEach(choice => {
-                    const isUserChoice = sel.includes(choice.id);
-                    const isRight = cor.includes(choice.id);
+        this.clearActiveSessionStorage();
+        this.showScreen('results-screen');
+    }
 
-                    let cls = "bg-slate-900 border-slate-700 text-slate-400";
-                    if (isRight) cls = "bg-emerald-500/20 border-emerald-500 text-emerald-400 font-bold";
-                    else if (isUserChoice && !isRight) cls = "bg-red-500/20 border-red-500 text-red-400 line-through";
+    renderReviewList() {
+        const container = document.getElementById('review-list-container');
+        container.innerHTML = '';
 
-                    choicesHTML += `
-                        <div class="p-3 rounded-xl border ${cls} text-xs md:text-sm flex items-start justify-between">
-                            <div>
-                                <span class="font-bold mr-1.5">${this.escapeHTML(choice.id)}.</span>
-                                ${this.formatText(choice.text)}
-                            </div>
-                            ${isRight ? '<span class="text-[10px] uppercase font-bold bg-emerald-500/30 text-emerald-300 px-2 py-0.5 rounded ml-2">Correct</span>' : ''}
-                            ${isUserChoice && !isRight ? '<span class="text-[10px] uppercase font-bold bg-red-500/30 text-red-300 px-2 py-0.5 rounded ml-2">Your Answer</span>' : ''}
-                        </div>`;
-                });
+        this.sessionQuestions.forEach((q, idx) => {
+            const sel = (this.userAnswers[q.id] || []).sort();
+            const cor = [...q.correctAnswers].sort();
+            const isCorrect = JSON.stringify(sel) === JSON.stringify(cor);
+            const isMulti = q.correctAnswers.length > 1 || q.isMulti === true;
 
-                card.innerHTML = `
-                    <div class="flex items-start justify-between gap-3">
-                        <span class="text-xs font-bold px-2.5 py-1 rounded-md ${
-                            isCorrect
-                                ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                                : 'bg-red-500/10 text-red-400 border border-red-500/20'
-                        }">
-                            Q${idx + 1} - ${isCorrect ? 'CORRECT' : 'INCORRECT'}
-                        </span>
-                        <span class="text-xs text-slate-400 font-mono">${isMulti ? 'Multi-Select' : 'Single Choice'}</span>
-                    </div>
-                    <p class="text-sm font-semibold text-slate-100">${this.formatText(q.question)}</p>
-                    <div class="space-y-2">${choicesHTML}</div>
-                    <div class="p-3 rounded-xl bg-slate-900/80 border border-slate-800 text-xs text-slate-300 leading-relaxed">
-                        <strong class="text-brand-accent block mb-1"><i class="fa-solid fa-lightbulb mr-1"></i> Explanation:</strong>
-                        ${this.formatText(q.explanation)}
+            const card = document.createElement('div');
+            card.className = `p-5 rounded-2xl border ${
+                isCorrect ? 'bg-slate-800/40 border-slate-700/60' : 'bg-red-950/20 border-red-500/30'
+            } space-y-4`;
+
+            let choicesHTML = '';
+            q.choices.forEach(choice => {
+                const isUserChoice = sel.includes(choice.id);
+                const isRight = cor.includes(choice.id);
+
+                let cls = "bg-slate-900 border-slate-700 text-slate-400";
+                if (isRight) cls = "bg-emerald-500/20 border-emerald-500 text-emerald-400 font-bold";
+                else if (isUserChoice && !isRight) cls = "bg-red-500/20 border-red-500 text-red-400 line-through";
+
+                choicesHTML += `
+                    <div class="p-3 rounded-xl border ${cls} text-xs md:text-sm flex items-start justify-between">
+                        <div>
+                            <span class="font-bold mr-1.5">${this.escapeHTML(choice.id)}.</span>
+                            ${this.formatText(choice.text)}
+                        </div>
+                        ${isRight ? '<span class="text-[10px] uppercase font-bold bg-emerald-500/30 text-emerald-300 px-2 py-0.5 rounded ml-2">Correct</span>' : ''}
+                        ${isUserChoice && !isRight ? '<span class="text-[10px] uppercase font-bold bg-red-500/30 text-red-300 px-2 py-0.5 rounded ml-2">Your Answer</span>' : ''}
                     </div>`;
-                container.appendChild(card);
             });
-        }
 
-        retakeAll() {
-            this.startExam();
-        }
+            card.innerHTML = `
+                <div class="flex items-start justify-between gap-3">
+                    <span class="text-xs font-bold px-2.5 py-1 rounded-md ${
+                        isCorrect
+                            ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                            : 'bg-red-500/10 text-red-400 border border-red-500/20'
+                    }">
+                        Q${idx + 1} - ${isCorrect ? 'CORRECT' : 'INCORRECT'}
+                    </span>
+                    <span class="text-xs text-slate-400 font-mono">${isMulti ? 'Multi-Select' : 'Single Choice'}</span>
+                </div>
+                <p class="text-sm font-semibold text-slate-100">${this.formatText(q.question)}</p>
+                <div class="space-y-2">${choicesHTML}</div>
+                <div class="p-3 rounded-xl bg-slate-900/80 border border-slate-800 text-xs text-slate-300 leading-relaxed">
+                    <strong class="text-brand-accent block mb-1"><i class="fa-solid fa-lightbulb mr-1"></i> Explanation:</strong>
+                    ${this.formatText(q.explanation)}
+                </div>`;
+            container.appendChild(card);
+        });
+    }
 
-        retakeMissed() {
-    const missed = this.sessionQuestions.filter(q => {
-        const sel = (this.userAnswers[q.id] || []).sort();
-        const cor = [...q.correctAnswers].sort();
-        return JSON.stringify(sel) !== JSON.stringify(cor);
-    });
-    if (missed.length === 0) {
-        alert("No missed questions to retake. Starting a full retake instead.");
+    retakeAll() {
+        // Re-shuffle the pool and reset the cursor so Retake Full always starts clean
+        this._resetCursor();
         this.startExam();
-    } else {
-        const saved = this.questionCount;
-        this.questionCount = 0;      // full missed set
-        this.startExam(missed);
-        this.questionCount = saved;  // restore
+    }
+
+    retakeMissed() {
+        const missed = this.sessionQuestions.filter(q => {
+            const sel = (this.userAnswers[q.id] || []).sort();
+            const cor = [...q.correctAnswers].sort();
+            return JSON.stringify(sel) !== JSON.stringify(cor);
+        });
+        if (missed.length === 0) {
+            alert("No missed questions to retake. Starting a full retake instead.");
+            this.retakeAll();
+        } else {
+            this.startExam(missed);
+        }
+    }
+
+    // ---------- History ----------
+    saveHistoryRecord(record) {
+        try {
+            const list = JSON.parse(localStorage.getItem(this.STORAGE_KEY_HISTORY) || '[]');
+            list.unshift(record);
+            if (list.length > 15) list.pop();
+            localStorage.setItem(this.STORAGE_KEY_HISTORY, JSON.stringify(list));
+            this.renderHistory();
+        } catch (e) {}
+    }
+
+    renderHistory() {
+        const container = document.getElementById('history-container');
+        if (!container) return;
+        try {
+            const records = JSON.parse(localStorage.getItem(this.STORAGE_KEY_HISTORY) || '[]');
+            if (!records.length) {
+                container.innerHTML = `<p class="text-xs text-slate-500 italic">No past exam attempts recorded yet.</p>`;
+                return;
+            }
+            container.innerHTML = records.map(r => `
+                <div class="flex items-center justify-between p-3 rounded-xl bg-slate-900/60 border border-slate-800 text-xs">
+                    <div class="space-y-0.5">
+                        <p class="font-bold text-slate-200">${this.escapeHTML(r.title)}</p>
+                        <p class="text-[10px] text-slate-500">${r.date} • Mode: <span class="capitalize text-slate-400">${r.mode}</span></p>
+                    </div>
+                    <div class="text-right">
+                        <span class="font-bold text-sm ${r.passed ? 'text-emerald-400' : 'text-red-400'}">${r.score}%</span>
+                        <span class="block text-[10px] font-semibold ${r.passed ? 'text-emerald-500/80' : 'text-red-500/80'}">${r.passed ? 'PASSED' : 'FAILED'}</span>
+                    </div>
+                </div>`).join('');
+        } catch (e) {
+            container.innerHTML = `<p class="text-xs text-slate-500 italic">No past exam attempts recorded yet.</p>`;
+        }
+    }
+
+    clearHistory() {
+        if (confirm("Clear all recorded exam history?")) {
+            localStorage.removeItem(this.STORAGE_KEY_HISTORY);
+            this.renderHistory();
+        }
+    }
+
+    // ---------- Session persistence ----------
+    saveActiveSession() {
+        try {
+            const state = {
+                sessionQuestions: this.sessionQuestions,
+                currentIndex: this.currentIndex,
+                userAnswers: this.userAnswers,
+                flaggedSet: Array.from(this.flaggedSet),
+                mode: this.mode,
+                timeRemainingSeconds: this.timeRemainingSeconds,
+                totalExamSeconds: this.totalExamSeconds,
+                questionCursor: this.questionCursor
+            };
+            localStorage.setItem(this.STORAGE_KEY_SAVED_SESSION, JSON.stringify(state));
+        } catch (e) {}
+    }
+
+    checkSavedSession() {
+        try {
+            const saved = localStorage.getItem(this.STORAGE_KEY_SAVED_SESSION);
+            if (!saved) return;
+            const parsed = JSON.parse(saved);
+            if (!parsed.sessionQuestions || !parsed.sessionQuestions.length) return;
+
+            if (confirm("Resume your previous unfinished exam session?")) {
+                this.sessionQuestions = parsed.sessionQuestions;
+                this.currentIndex = parsed.currentIndex || 0;
+                this.userAnswers = parsed.userAnswers || {};
+                this.flaggedSet = new Set(parsed.flaggedSet || []);
+                this.mode = parsed.mode || 'test';
+                this.timeRemainingSeconds = parsed.timeRemainingSeconds || 900;
+                this.totalExamSeconds = parsed.totalExamSeconds || 900;
+                this.questionCursor = parsed.questionCursor || this.questionCursor;
+
+                if (this.mode === 'test') this.startTimer();
+                this.showScreen('exam-screen');
+                this.renderCurrentQuestion();
+            } else {
+                this.clearActiveSessionStorage();
+            }
+        } catch (e) {}
+    }
+
+    clearActiveSessionStorage() {
+        localStorage.removeItem(this.STORAGE_KEY_SAVED_SESSION);
+    }
+
+    escapeHTML(str) {
+        if (str == null) return '';
+        return String(str).replace(/[&<>'"`/]/g, tag => ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            "'": '&#39;',
+            '"': '&quot;',
+            '`': '&#96;',
+            '/': '&#47;'
+        }[tag]));
     }
 }
 
-        // ---------- History ----------
-        saveHistoryRecord(record) {
-            try {
-                const list = JSON.parse(localStorage.getItem(this.STORAGE_KEY_HISTORY) || '[]');
-                list.unshift(record);
-                if (list.length > 15) list.pop();
-                localStorage.setItem(this.STORAGE_KEY_HISTORY, JSON.stringify(list));
-                this.renderHistory();
-            } catch (e) {}
-        }
-
-        renderHistory() {
-            const container = document.getElementById('history-container');
-            try {
-                const records = JSON.parse(localStorage.getItem(this.STORAGE_KEY_HISTORY) || '[]');
-                if (!records.length) {
-                    container.innerHTML = `<p class="text-xs text-slate-500 italic">No past exam attempts recorded yet.</p>`;
-                    return;
-                }
-                container.innerHTML = records.map(r => `
-                    <div class="flex items-center justify-between p-3 rounded-xl bg-slate-900/60 border border-slate-800 text-xs">
-                        <div class="space-y-0.5">
-                            <p class="font-bold text-slate-200">${this.escapeHTML(r.title)}</p>
-                            <p class="text-[10px] text-slate-500">${r.date} • Mode: <span class="capitalize text-slate-400">${r.mode}</span></p>
-                        </div>
-                        <div class="text-right">
-                            <span class="font-bold text-sm ${r.passed ? 'text-emerald-400' : 'text-red-400'}">${r.score}%</span>
-                            <span class="block text-[10px] font-semibold ${r.passed ? 'text-emerald-500/80' : 'text-red-500/80'}">${r.passed ? 'PASSED' : 'FAILED'}</span>
-                        </div>
-                    </div>`).join('');
-            } catch (e) {
-                container.innerHTML = `<p class="text-xs text-slate-500 italic">No past exam attempts recorded yet.</p>`;
-            }
-        }
-
-        clearHistory() {
-            if (confirm("Clear all recorded exam history?")) {
-                localStorage.removeItem(this.STORAGE_KEY_HISTORY);
-                this.renderHistory();
-            }
-        }
-
-        // ---------- Session persistence ----------
-        saveActiveSession() {
-            try {
-                const state = {
-                    sessionQuestions: this.sessionQuestions,
-                    currentIndex: this.currentIndex,
-                    userAnswers: this.userAnswers,
-                    flaggedSet: Array.from(this.flaggedSet),
-                    mode: this.mode,
-                    timeRemainingSeconds: this.timeRemainingSeconds,
-                    totalExamSeconds: this.totalExamSeconds
-                };
-                localStorage.setItem(this.STORAGE_KEY_SAVED_SESSION, JSON.stringify(state));
-            } catch (e) {}
-        }
-
-        checkSavedSession() {
-            try {
-                const saved = localStorage.getItem(this.STORAGE_KEY_SAVED_SESSION);
-                if (!saved) return;
-                const parsed = JSON.parse(saved);
-                if (!parsed.sessionQuestions || !parsed.sessionQuestions.length) return;
-
-                if (confirm("Resume your previous unfinished exam session?")) {
-                    this.sessionQuestions = parsed.sessionQuestions;
-                    this.currentIndex = parsed.currentIndex || 0;
-                    this.userAnswers = parsed.userAnswers || {};
-                    this.flaggedSet = new Set(parsed.flaggedSet || []);
-                    this.mode = parsed.mode || 'test';
-                    this.timeRemainingSeconds = parsed.timeRemainingSeconds || 900;
-                    this.totalExamSeconds = parsed.totalExamSeconds || 900;
-
-                    if (this.mode === 'test') this.startTimer();
-                    this.showScreen('exam-screen');
-                    this.renderCurrentQuestion();
-                } else {
-                    this.clearActiveSessionStorage();
-                }
-            } catch (e) {}
-        }
-
-        clearActiveSessionStorage() {
-            localStorage.removeItem(this.STORAGE_KEY_SAVED_SESSION);
-        }
-
-        escapeHTML(str) {
-            if (str == null) return '';
-            return String(str).replace(/[&<>'"`/]/g, tag => ({
-                '&': '&amp;',
-                '<': '&lt;',
-                '>': '&gt;',
-                "'": '&#39;',
-                '"': '&quot;',
-                '`': '&#96;',
-                '/': '&#47;'
-            }[tag]));
-        }
-    }
-
-    let app;
-    window.addEventListener('DOMContentLoaded', () => {
-        app = new VCESimulatorApp();
-    });
+let app;
+window.addEventListener('DOMContentLoaded', () => {
+    app = new VCESimulatorApp();
+});
 </script>
 </body>
 </html>
