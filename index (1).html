@@ -326,6 +326,10 @@
                         <i class="fa-solid fa-chevron-right"></i>
                     </button>
 
+                    <button id="btn-stop-grade" onclick="app.stopAndGrade()" class="hidden px-5 py-3 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-sm transition shadow-lg shadow-amber-600/20">
+    Stop &amp; Grade
+</button>
+
                     <button id="btn-submit-exam" onclick="app.confirmSubmitExam()" class="hidden px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm transition shadow-lg shadow-emerald-600/20">
                         Finish & Submit
                     </button>
@@ -603,8 +607,10 @@
 
 
 /**
- * VCE Exam Simulator Core Application Object
+ * AZ-900 Built-in Sample Questions Data
+ * (Keep your existing SAMPLE_AZ900_QUESTIONS array here, unchanged)
  */
+
 class VCESimulatorApp {
     constructor() {
         this.activeQuestions = [...SAMPLE_AZ900_QUESTIONS];
@@ -615,12 +621,11 @@ class VCESimulatorApp {
         this.shuffleQuestions = true;
         this.shuffleChoices = true;
 
-        this.questionCount = 0;          // 0 = All
-        this.questionCursor = 0;         // how many questions already consumed from the pool
-        this._shuffledPool = null;       // stable shuffled pool for cursor advancement
+        this.questionCount = 0;
+        this.questionCursor = 0;
+        this._shuffledPool = null;
         this._poolShuffled = false;
 
-        // Restore cursor from localStorage (survives reloads / new sessions)
         const savedCursor = localStorage.getItem('vce_question_cursor');
         if (savedCursor !== null) this.questionCursor = parseInt(savedCursor, 10) || 0;
 
@@ -900,7 +905,6 @@ class VCESimulatorApp {
 
     // ---------- Exam execution ----------
     startExam(questionsToUse = null) {
-        // Retake Missed / explicit subset: bypass cursor entirely
         if (questionsToUse) {
             this._launchSession(questionsToUse);
             return;
@@ -909,7 +913,6 @@ class VCESimulatorApp {
         this.shuffleQuestions = document.getElementById('chk-shuffle-q').checked;
         this.shuffleChoices  = document.getElementById('chk-shuffle-c').checked;
 
-        // Build a stable shuffled pool once (order persists across sessions)
         if (!this._poolShuffled || !this._shuffledPool) {
             this._shuffledPool = this.arrayShuffle(JSON.parse(JSON.stringify(this.activeQuestions)));
             this._poolShuffled = true;
@@ -918,7 +921,6 @@ class VCESimulatorApp {
         const pool = this._shuffledPool;
         const requested = (typeof this.questionCount === 'number') ? this.questionCount : 0;
 
-        // "All" — start over from the top
         if (requested === 0 || requested >= pool.length) {
             this.questionCursor = 0;
             this._persistCursor();
@@ -929,7 +931,6 @@ class VCESimulatorApp {
         const start = this.questionCursor;
         const end   = start + requested;
 
-        // Rollover if not enough left in the pool
         if (end > pool.length) {
             const slice = pool.slice(start).concat(pool.slice(0, end - pool.length));
             this.questionCursor = end - pool.length;
@@ -1090,13 +1091,17 @@ class VCESimulatorApp {
 
         const btnNext = document.getElementById('btn-next');
         const btnSubmit = document.getElementById('btn-submit-exam');
+        const btnStop = document.getElementById('btn-stop-grade');
 
-        if (this.currentIndex === total - 1) {
+        const isLast = this.currentIndex === total - 1;
+        if (isLast) {
             btnNext.classList.add('hidden');
             btnSubmit.classList.remove('hidden');
+            if (btnStop) btnStop.classList.remove('hidden');
         } else {
             btnNext.classList.remove('hidden');
             btnSubmit.classList.add('hidden');
+            if (btnStop) btnStop.classList.add('hidden');
         }
     }
 
@@ -1237,20 +1242,52 @@ class VCESimulatorApp {
         if (confirm(msg)) this.submitExam();
     }
 
-    submitExam() {
+    // ---------- Stop & Grade ----------
+    stopAndGrade() {
+        const answered = this.sessionQuestions.filter(q => (this.userAnswers[q.id] || []).length > 0).length;
+        const unanswered = this.sessionQuestions.length - answered;
+
+        if (answered === 0) {
+            alert("You haven't answered any questions yet. Nothing to grade.");
+            return;
+        }
+
+        const msg =
+            `Stop and grade now?\n\n` +
+            `Answered: ${answered}\n` +
+            `Skipped:  ${unanswered}\n\n` +
+            `Only the ${answered} answered questions will be scored. Skipped questions will NOT count as wrong.`;
+
+        if (confirm(msg)) {
+            this.submitExam(true);
+        }
+    }
+
+    // ---------- Submit / Results ----------
+    submitExam(skipUnanswered = false) {
         this.stopTimer();
+
+        const gradable = skipUnanswered
+            ? this.sessionQuestions.filter(q => (this.userAnswers[q.id] || []).length > 0)
+            : this.sessionQuestions;
+
+        if (gradable.length === 0) {
+            alert("You haven't answered any questions yet. Nothing to grade.");
+            return;
+        }
 
         let correctCount = 0;
         const missed = [];
 
-        this.sessionQuestions.forEach(q => {
+        gradable.forEach(q => {
             const sel = (this.userAnswers[q.id] || []).sort();
             const cor = [...q.correctAnswers].sort();
             if (JSON.stringify(sel) === JSON.stringify(cor)) correctCount++;
             else missed.push(q);
         });
 
-        const total = this.sessionQuestions.length;
+        const total = gradable.length;
+        const skipped = this.sessionQuestions.length - total;
         const percentage = Math.round((correctCount / total) * 100);
         const isPassed = percentage >= 70;
 
@@ -1272,17 +1309,19 @@ class VCESimulatorApp {
 
         circle.style.strokeDashoffset = 377 - (377 * percentage) / 100;
 
+        const skipNote = skipped > 0 ? ` (${skipped} skipped and excluded.)` : '';
+
         if (isPassed) {
             circle.className.baseVal = "text-emerald-500 transition-all duration-1000 ease-out";
             title.innerText = "EXAM PASSED";
             title.className = "text-2xl font-black text-emerald-400 tracking-wide uppercase";
-            desc.innerText = `Congratulations! You scored ${percentage}%, meeting the 70% requirement.`;
+            desc.innerText = `Congratulations! You scored ${percentage}% on ${total} attempted questions.${skipNote}`;
             glow.className = "absolute -top-24 -left-24 w-48 h-48 bg-emerald-500/20 rounded-full blur-3xl pointer-events-none";
         } else {
             circle.className.baseVal = "text-red-500 transition-all duration-1000 ease-out";
             title.innerText = "EXAM FAILED";
             title.className = "text-2xl font-black text-red-400 tracking-wide uppercase";
-            desc.innerText = `You scored ${percentage}%. You need 70% or higher to pass. Review missed items below.`;
+            desc.innerText = `You scored ${percentage}% on ${total} attempted questions. You need 70% or higher to pass.${skipNote}`;
             glow.className = "absolute -top-24 -left-24 w-48 h-48 bg-red-500/20 rounded-full blur-3xl pointer-events-none";
         }
 
@@ -1294,7 +1333,14 @@ class VCESimulatorApp {
             btnMissed.onclick = () => this.startExam(missed);
         }
 
-        this.renderReviewList();
+        const reviewInfo = document.getElementById('review-filter-info');
+        if (reviewInfo) {
+            reviewInfo.innerText = skipped > 0
+                ? `Showing ${total} attempted (${skipped} skipped)`
+                : 'Showing all questions';
+        }
+
+        this.renderReviewList(skipUnanswered);
 
         this.saveHistoryRecord({
             date: new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -1308,11 +1354,15 @@ class VCESimulatorApp {
         this.showScreen('results-screen');
     }
 
-    renderReviewList() {
+    renderReviewList(skipUnanswered = false) {
         const container = document.getElementById('review-list-container');
         container.innerHTML = '';
 
-        this.sessionQuestions.forEach((q, idx) => {
+        const reviewSet = skipUnanswered
+            ? this.sessionQuestions.filter(q => (this.userAnswers[q.id] || []).length > 0)
+            : this.sessionQuestions;
+
+        reviewSet.forEach((q, idx) => {
             const sel = (this.userAnswers[q.id] || []).sort();
             const cor = [...q.correctAnswers].sort();
             const isCorrect = JSON.stringify(sel) === JSON.stringify(cor);
@@ -1365,7 +1415,6 @@ class VCESimulatorApp {
     }
 
     retakeAll() {
-        // Re-shuffle the pool and reset the cursor so Retake Full always starts clean
         this._resetCursor();
         this.startExam();
     }
